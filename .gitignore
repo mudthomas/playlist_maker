@@ -1,6 +1,7 @@
 auth.json
 opponent_list.txt
 blacklist_artists.txt
+*.bkup
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
