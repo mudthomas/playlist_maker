@@ -1,0 +1,2 @@
+Artists to skip
+One per line
