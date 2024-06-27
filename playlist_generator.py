@@ -60,20 +60,26 @@ class Playlist_Generator:
                     json.dump(credentials, auth)
 
         self.blacklist_artists = []
-        with open('blacklist_artists.txt') as f:
-            while True:
-                line = f.readline()
-                if not line:
-                    break
-                self.blacklist_artists.append(line.strip())
+        try:
+            with open('blacklist_artists.txt') as f:
+                while True:
+                    line = f.readline()
+                    if not line:
+                        break
+                    self.blacklist_artists.append(line.strip())
+        except FileNotFoundError:
+            print("No black_list.txt found.")
 
         self.opponent_list = []
-        with open('opponent_list.txt') as f:
-            while True:
-                line = f.readline()
-                if not line:
-                    break
-                self.opponent_list.append(line.strip())
+        try:
+            with open('opponent_list.txt') as f:
+                while True:
+                    line = f.readline()
+                    if not line:
+                        break
+                    self.opponent_list.append(line.strip())
+        except FileNotFoundError:
+            print("No opponent_list.txt found.")
 
     def clean_playlist(self, playlist_id):
         """Clears a playlist of entries.
@@ -196,9 +202,8 @@ class Playlist_Generator:
 
         self.clean_playlist(self.stealing_playlist)
 
-        top_artists = self.get_opponent_dict(self.opponent_list[0], scrobble_target)
-
-        for opponent in self.opponent_list[1:]:
+        top_artists = {}
+        for opponent in self.opponent_list:
             opponent_dict = self.get_opponent_dict(opponent, scrobble_target)
             for artist in opponent_dict.keys():
                 top_artists.update({artist: max(opponent_dict.get(artist), top_artists.get(artist, 0))})
