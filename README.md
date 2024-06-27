@@ -26,7 +26,7 @@ For API accounts for last.fm and Spotify, see the following links:
 * last.fm: https://www.last.fm/api
 * Spotify: https://developer.spotify.com/documentation/web-api
 
-Also a 'black_list.txt' can be added with one artist per line. These artists will not be added to playlists.
+Also a 'blacklist_artists.txt' can be added with one artist per line. These artists will not be added to playlists.
 
 ## The issues
 

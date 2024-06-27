@@ -44,8 +44,8 @@ class Playlist_Generator:
                                                                                  client_secret=CLIENT_SECRET,
                                                                                  redirect_uri="https://localhost:8080",
                                                                                  scope="playlist-modify-public"))
-            self.farming_playlist = input("Spotify Farming playlist id: ")
-            self.stealing_playlist = input("Spotify Stealing playlist id: ")
+            self.farming_playlist = input("Spotify Farming playlist id (must be public): ")
+            self.stealing_playlist = input("Spotify Stealing playlist id (must be public): ")
 
             if generate_flag == 'y':
                 credentials = {'LASTFM_API_KEY': API_KEY,
@@ -68,7 +68,7 @@ class Playlist_Generator:
                         break
                     self.blacklist_artists.append(line.strip())
         except FileNotFoundError:
-            print("No black_list.txt found.")
+            print("No blacklist_artists.txt found.")
 
         self.opponent_list = []
         try:
