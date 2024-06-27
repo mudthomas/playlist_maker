@@ -61,25 +61,30 @@ class Playlist_Generator:
 
         self.blacklist_artists = []
         try:
-            with open('blacklist_artists.txt') as f:
+            with open('blacklist_artists.txt', 'r') as f:
                 while True:
                     line = f.readline()
                     if not line:
                         break
                     self.blacklist_artists.append(line.strip())
         except FileNotFoundError:
-            print("No blacklist_artists.txt found.")
+            print("No blacklist_artists.txt found. Generating new, empty file.")
+            with open('blacklist_artists.txt', 'x') as f:
+                pass
 
         self.opponent_list = []
         try:
-            with open('opponent_list.txt') as f:
+            with open('opponent_list.txt', 'r') as f:
                 while True:
                     line = f.readline()
                     if not line:
                         break
                     self.opponent_list.append(line.strip())
         except FileNotFoundError:
-            print("No opponent_list.txt found.")
+            print("No opponent_list.txt found. Generating new, empty file.")
+            with open('opponent_list.txt', 'x') as f:
+                pass
+
 
     def clean_playlist(self, playlist_id):
         """Clears a playlist of entries.
