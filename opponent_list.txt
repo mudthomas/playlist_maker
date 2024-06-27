@@ -1,2 +1,2 @@
-Opponents to overtake, one per line
-No idea what happends if usernames do not exist in last.fm
+Opponent1
+Opponent2
