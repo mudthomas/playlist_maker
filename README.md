@@ -16,19 +16,20 @@ Of course, cheating is not an option. So instead of just scrobbling songs in ord
 This little Python script uses the last.fm API to find a users most played artists with less than 30 plays.
 Then the Spotify API is used to find the top songs of those artist and adds them to a playlist.
 
+A playlist is also generated to overtake the last.fm users in 'opponent_list.txt'.
+
+I have also added functionality to increase own plays to specific targets. I did this in order to push certain artists off of my top 100.
+
 
 ## The issues
 
 The code is not fool proof. Here are the issues I have noticed, and will probably ignore.
-* A search of the artist name supplied from last.fm is done on the Spotify API. The assumption is made that the first result is the correct artist. This is not always true.
+* A search of the artist name supplied from last.fm is done on the Spotify API. The assumption is made that the first result is the correct artist. This is not always true. The code is verbose to be able to double check this.
 * There is sometimes discrepancies between the attribution done by Spotify and last.fm. This can result in the wrong artist being added to the playlist.
+* Pylast has not implemented the last.fm API way of fetching more than 1000 artist. When I have surpassed this limit myself I might consider a work around. I read on somewhere that there is no limit on the "recent plays".
 
 ## The future
 
-A prompt to populate auth.json when it does not exist would be nice.
-
-
-Perhaps I will look into incorporating Discord API in order to send commands to the bot. For now I make use of the crownseeder admin command.
-
-
-Next project will be a crown stealer. Looking up the "vulnerable" crowns belonging to my opponents and generating playlists to overtake them.
+* I might make an executable to let other, jealous users make use of it.
+* A prompt to populate auth.json when it does not exist would be nice.
+* Perhaps I will look into incorporating Discord API in order to send commands to the bot. For now I make use of the crownseeder admin command.
