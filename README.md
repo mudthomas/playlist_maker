@@ -20,7 +20,7 @@ A playlist is also generated to overtake the last.fm users in 'opponent_list.txt
 
 I have also added functionality to increase own plays to specific targets. I did this in order to push certain artists off of my top 100.
 
-NOTE: User passwords and API keys are stored as plain text in auth.json. If you do not like this, do not use it. In the future an alternative method might be added, but this suits me.
+### NOTE: User passwords and API keys are stored as plain text in auth.json. If you do not like this, do not use it. In the future an alternative method might be added, but this suits me.
 
 
 ## The issues
