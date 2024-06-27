@@ -1,2 +1,2 @@
-Artists to skip
-One per line
+Unwanted artist
+Another unwanted artist
