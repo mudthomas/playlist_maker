@@ -20,7 +20,11 @@ A playlist is also generated to overtake the last.fm users in 'opponent_list.txt
 
 I have also added functionality to increase own plays to specific targets. I did this in order to push certain artists off of my top 100.
 
-### NOTE: User passwords and API keys are stored as plain text in auth.json. If you do not like this, do not use it. In the future an alternative method might be added, but this suits me.
+#### NOTE: User passwords and API keys are stored as plain text in auth.json. If you do not like this, there is a possibility to not save credentials after the session. I have no idea if this can be read from memory by some other malicious program.
+
+For API accounts for last.fm and Spotify, see the following links:
+* last.fm: https://www.last.fm/api
+* Spotify: https://developer.spotify.com/documentation/web-api
 
 
 ## The issues
@@ -33,5 +37,4 @@ The code is not fool proof. Here are the issues I have noticed, and will probabl
 ## The future
 
 * I might make an executable to let other, jealous users make use of it.
-* A prompt to populate auth.json when it does not exist would be nice.
 * Perhaps I will look into incorporating Discord API in order to send commands to the bot. For now I make use of the crownseeder admin command.

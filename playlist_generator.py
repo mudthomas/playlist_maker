@@ -5,24 +5,59 @@ import spotipy
 
 class Playlist_Generator:
     def __init__(self):
-        with open('auth.json', 'r', encoding='UTF-8') as auth:
-            credentials = json.load(auth)
-            API_KEY = credentials['LASTFM_API_KEY']
-            API_SECRET = credentials['LASTFM_API_SECRET']
-            self.my_lastfm_username = credentials['LASTFM_USERNAME']
-            PASSWORD = pylast.md5(credentials['LASTFM_PASSWORD'])
+        try:
+            with open('auth.json', 'r', encoding='UTF-8') as auth:
+                credentials = json.load(auth)
+                API_KEY = credentials['LASTFM_API_KEY']
+                API_SECRET = credentials['LASTFM_API_SECRET']
+                self.my_lastfm_username = credentials['LASTFM_USERNAME']
+                PASSWORD = pylast.md5(credentials['LASTFM_PASSWORD'])
+                self.pylast_net = pylast.LastFMNetwork(api_key=API_KEY,
+                                                       api_secret=API_SECRET,
+                                                       username=self.my_lastfm_username,
+                                                       password_hash=PASSWORD)
+                CLIENT_ID = credentials['SPOTIFY_CLIENT_ID']
+                CLIENT_SECRET = credentials['SPOTIFY_CLIENT_SECRET']
+                self.spot = spotipy.Spotify(auth_manager=spotipy.oauth2.SpotifyOAuth(client_id=CLIENT_ID,
+                                                                                     client_secret=CLIENT_SECRET,
+                                                                                     redirect_uri="https://localhost:8080",
+                                                                                     scope="playlist-modify-public"))
+                self.farming_playlist = credentials['FARMING_PLAYLIST_ID']
+                self.stealing_playlist = credentials['STEALING_PLAYLIST_ID']
+        except FileNotFoundError:
+            print("No auth.json found.")
+            while True:
+                generate_flag = input("Generate auth.json? Otherwise credentials will not be saved. (y/n): ")
+                if generate_flag in ['y', 'n']:
+                    break
+            API_KEY = input("last.fm API key: ")
+            API_SECRET = input("last.fm API secret: ")
+            self.my_lastfm_username = input("last.fm API username: ")
+            PASSWORD = input("last.fm API password: ")
             self.pylast_net = pylast.LastFMNetwork(api_key=API_KEY,
                                                    api_secret=API_SECRET,
                                                    username=self.my_lastfm_username,
-                                                   password_hash=PASSWORD)
-            CLIENT_ID = credentials['SPOTIFY_CLIENT_ID']
-            CLIENT_SECRET = credentials['SPOTIFY_CLIENT_SECRET']
+                                                   password_hash=pylast.md5(PASSWORD))
+            CLIENT_ID = input("Spotify client id: ")
+            CLIENT_SECRET = input("Spotify client secret: ")
             self.spot = spotipy.Spotify(auth_manager=spotipy.oauth2.SpotifyOAuth(client_id=CLIENT_ID,
                                                                                  client_secret=CLIENT_SECRET,
                                                                                  redirect_uri="https://localhost:8080",
                                                                                  scope="playlist-modify-public"))
-            self.farming_playlist = credentials['FARMING_PLAYLIST_ID']
-            self.stealing_playlist = credentials['STEALING_PLAYLIST_ID']
+            self.farming_playlist = input("Spotify Farming playlist id: ")
+            self.stealing_playlist = input("Spotify Stealing playlist id: ")
+
+            if generate_flag == 'y':
+                credentials = {'LASTFM_API_KEY': API_KEY,
+                               'LASTFM_API_SECRET': API_SECRET,
+                               'LASTFM_USERNAME': self.my_lastfm_username,
+                               'LASTFM_PASSWORD': PASSWORD,
+                               'SPOTIFY_CLIENT_ID': CLIENT_ID,
+                               'SPOTIFY_CLIENT_SECRET': CLIENT_SECRET,
+                               'FARMING_PLAYLIST_ID': self.farming_playlist,
+                               'STEALING_PLAYLIST_ID': self.stealing_playlist}
+                with open('auth.json', 'w', encoding='UTF-8') as auth:
+                    json.dump(credentials, auth)
 
         self.blacklist_artists = []
         with open('blacklist_artists.txt') as f:
@@ -151,16 +186,20 @@ class Playlist_Generator:
         track_ids = self.get_track_ids(top_artists)
         self.add_to_playlist(track_ids, playlist_id)
 
-    def steal_crowns(self):
+    def steal_crowns(self, scrobble_target=30):
         """Populates the 'Stealing playlist' with enough plays to overtake opponents.
         The number of songs per artists are also limited to their spotify top tracks.
+
+        Args:
+            scrobble_target (int, optional): Lower scrobble limit of opponent entries to target. Defaults to 30.
         """
+
         self.clean_playlist(self.stealing_playlist)
 
-        top_artists = self.get_opponent_dict(self.opponent_list[0])
+        top_artists = self.get_opponent_dict(self.opponent_list[0], scrobble_target)
 
         for opponent in self.opponent_list[1:]:
-            opponent_dict = self.get_opponent_dict(opponent)
+            opponent_dict = self.get_opponent_dict(opponent, scrobble_target)
             for artist in opponent_dict.keys():
                 top_artists.update({artist: max(opponent_dict.get(artist), top_artists.get(artist, 0))})
 
