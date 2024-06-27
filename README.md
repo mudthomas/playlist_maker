@@ -16,7 +16,7 @@ Of course, cheating is not an option. So instead of just scrobbling songs in ord
 This little Python script uses the last.fm API to find a users most played artists with less than 30 plays.
 Then the Spotify API is used to find the top songs of those artist and adds them to a playlist.
 
-A playlist is also generated to overtake the last.fm users in 'opponent_list.txt'.
+A playlist is also generated to overtake the last.fm users in 'opponent_list.txt'. This file should have one username per line.
 
 I have also added functionality to increase own plays to specific targets. I did this in order to push certain artists off of my top 100.
 
@@ -26,6 +26,7 @@ For API accounts for last.fm and Spotify, see the following links:
 * last.fm: https://www.last.fm/api
 * Spotify: https://developer.spotify.com/documentation/web-api
 
+Also a 'black_list.txt' can be added with one artist per line. These artists will not be added to playlists.
 
 ## The issues
 
