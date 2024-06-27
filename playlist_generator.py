@@ -28,7 +28,7 @@ class Playlist_Generator:
             print("No auth.json found.")
             while True:
                 generate_flag = input("Generate auth.json? Otherwise credentials will not be saved. (y/n): ")
-                if generate_flag in ['y', 'n']:
+                if generate_flag in ['Y', 'y', 'N', 'n']:
                     break
             API_KEY = input("last.fm API key: ")
             API_SECRET = input("last.fm API secret: ")
@@ -47,7 +47,7 @@ class Playlist_Generator:
             self.farming_playlist = input("Spotify Farming playlist id (must be public): ")
             self.stealing_playlist = input("Spotify Stealing playlist id (must be public): ")
 
-            if generate_flag == 'y':
+            if generate_flag in ['Y', 'y']:
                 credentials = {'LASTFM_API_KEY': API_KEY,
                                'LASTFM_API_SECRET': API_SECRET,
                                'LASTFM_USERNAME': self.my_lastfm_username,
