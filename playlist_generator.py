@@ -85,7 +85,6 @@ class Playlist_Generator:
             with open('opponent_list.txt', 'x') as f:
                 pass
 
-
     def clean_playlist(self, playlist_id):
         """Clears a playlist of entries.
         Because of limitations, only a hundred tracks are removed at a time.
@@ -169,22 +168,24 @@ class Playlist_Generator:
                 break
         return ret
 
-    def generate_list_to_increase_own_plays(self, scrobble_target=30):
+    def generate_list_to_increase_own_plays(self, scrobble_target=30, number_of_tracks=500):
         """Populates the 'Farming playlist' with enough plays to reach target for each artist.
         The number of songs per artists are also limited to their spotify top tracks.
 
         Args:
             scrobble_target (int, optional): The target number of scrobbles per artist. Defaults to 30.
+            number_of_tracks (int, optional): Number of songs to be added to playlist. Defaults to 500.
         """
         self.generate_list(self.farming_playlist, scrobble_target)
 
-    def generate_list(self, playlist_id, scrobble_target=30):
+    def generate_list(self, playlist_id, scrobble_target=30, number_of_tracks=500):
         """Generates a playlist with enough plays to reach target for each artist.
         The number of songs per artists are also limited to their spotify top tracks.
 
         Args:
             playlist_id (str): The playlist to populate.
             scrobble_target (int, optional): The target number of scrobbles per artist. Defaults to 30.
+            number_of_tracks (int, optional): Number of songs to be added to playlist. Defaults to 500.
         """
         self.clean_playlist(playlist_id)
         top_artists = self.get_plays_needed(scrobble_target)
@@ -194,15 +195,16 @@ class Playlist_Generator:
                 top_artists.pop(artist)
 
         top_artists = [[key, value] for key, value in top_artists.items()]
-        track_ids = self.get_track_ids(top_artists)
+        track_ids = self.get_track_ids(top_artists, number_of_tracks)
         self.add_to_playlist(track_ids, playlist_id)
 
-    def steal_crowns(self, scrobble_target=30):
+    def steal_crowns(self, scrobble_target=30, number_of_tracks=500):
         """Populates the 'Stealing playlist' with enough plays to overtake opponents.
         The number of songs per artists are also limited to their spotify top tracks.
 
         Args:
             scrobble_target (int, optional): Lower scrobble limit of opponent entries to target. Defaults to 30.
+            number_of_tracks (int, optional): Number of songs to be added to playlist. Defaults to 500.
         """
 
         self.clean_playlist(self.stealing_playlist)
@@ -224,11 +226,11 @@ class Playlist_Generator:
 
         top_artists = [[key, value + 1] for key, value in top_artists.items() if value >= 0]
         top_artists.sort(key=lambda x: x[1])
-        track_ids = self.get_track_ids(top_artists)
+        track_ids = self.get_track_ids(top_artists, number_of_tracks)
         self.add_to_playlist(track_ids, self.stealing_playlist)
 
     def get_track_ids(self, top_artists, max_entries=500):
-        """Generates a list of spotify tradk
+        """Generates a list of spotify track ids from input artist and needed number of plays.
 
         Args:
             top_artists ([ [str, int] ]): An (preferrably) ordered list of pairs of artist names and number of plays.
@@ -252,6 +254,6 @@ class Playlist_Generator:
 if __name__ == "__main__":
     pg = Playlist_Generator()
     print("## Generating list for farming own crowns ##")
-    pg.generate_list_to_increase_own_plays(30)
+    pg.generate_list_to_increase_own_plays(30, 1000)
     print("\n## Generating list for stealing others crowns ##")
-    pg.steal_crowns(30)
+    pg.steal_crowns(30, 100)
