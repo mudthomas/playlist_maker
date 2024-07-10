@@ -1,6 +1,35 @@
 import json
 import pylast
 import spotipy
+import time
+import calendar
+import datetime as dt
+from tqdm import tqdm
+
+
+class advanced_User(pylast.User):
+    PERIOD_OVERALL = "overall"
+
+    def get_top_artists(self, period=PERIOD_OVERALL, limit=None, page=1):
+        """Returns the top artists played by a user.
+        * period: The period of time. Possible values:
+          o PERIOD_OVERALL
+          o PERIOD_7DAYS
+          o PERIOD_1MONTH
+          o PERIOD_3MONTHS
+          o PERIOD_6MONTHS
+          o PERIOD_12MONTHS
+        """
+
+        params = self._get_params()
+        params["period"] = period
+        params["page"] = page
+        if limit:
+            params["limit"] = limit
+
+        doc = self._request(self.ws_prefix + ".getTopArtists", True, params)
+
+        return pylast._extract_top_artists(doc, self.network)
 
 
 class Playlist_Generator:
@@ -126,8 +155,9 @@ class Playlist_Generator:
         Returns:
             {artist: scrobbles}: A dictionary with artist as keys and scrobbles as values.
         """
-        lastfm_user = self.pylast_net.get_user(self.my_lastfm_username)
-        top_artists = lastfm_user.get_top_artists(limit=1000)
+        # lastfm_user = self.pylast_net.get_user(self.my_lastfm_username)
+        lastfm_user = advanced_User(self.my_lastfm_username, self.pylast_net)
+        top_artists = lastfm_user.get_top_artists(limit=1000, page=1)
         ret = {}
         for a in top_artists:
             ret.update({a.item.get_name(): int(a.weight)})
@@ -143,12 +173,16 @@ class Playlist_Generator:
         Returns:
             {artist: scrobbles}: A dictionary with artist as keys and number of plays needed to reach target as values.
         """
-        lastfm_user = self.pylast_net.get_user(self.my_lastfm_username)
-        top_artists = lastfm_user.get_top_artists(limit=1000)
+        # lastfm_user = self.pylast_net.get_user(self.my_lastfm_username)
+        lastfm_user = advanced_User(self.my_lastfm_username, self.pylast_net)
         ret = {}
-        for a in top_artists:
-            if int(a.weight) < scrobble_target:
-                ret.update({a.item.get_name(): scrobble_target - int(a.weight)})
+        page_no = 1
+        while not len(ret.keys()):
+            top_artists = lastfm_user.get_top_artists(limit=1000, page=page_no)
+            for a in top_artists:
+                if int(a.weight) < scrobble_target:
+                    ret.update({a.item.get_name(): scrobble_target - int(a.weight)})
+            page_no += 1
         return ret
 
     def get_opponent_dict(self, opponent_lastfm_username, scrobble_target=30):
@@ -158,7 +192,8 @@ class Playlist_Generator:
         Returns:
             {artist: scrobbles}: A dictionary with artist as keys and scrobbles as values.
         """
-        lastfm_user = self.pylast_net.get_user(opponent_lastfm_username)
+        # lastfm_user = self.pylast_net.get_user(opponent_lastfm_username)
+        lastfm_user = advanced_User(opponent_lastfm_username, self.pylast_net)
         top_artists = lastfm_user.get_top_artists(limit=1000)
         ret = {}
         for a in top_artists:
@@ -176,7 +211,7 @@ class Playlist_Generator:
             scrobble_target (int, optional): The target number of scrobbles per artist. Defaults to 30.
             number_of_tracks (int, optional): Number of songs to be added to playlist. Defaults to 500.
         """
-        self.generate_list(self.farming_playlist, scrobble_target)
+        self.generate_list(self.farming_playlist, scrobble_target, number_of_tracks)
 
     def generate_list(self, playlist_id, scrobble_target=30, number_of_tracks=500):
         """Generates a playlist with enough plays to reach target for each artist.
@@ -250,10 +285,86 @@ class Playlist_Generator:
                 break
         return track_ids[:max_entries]
 
+    def set_settings(self, year, month, day):
+        with open('personal_plays_settings.json', 'w', encoding='UTF-8') as stats:
+                        settings = {'year': year,
+                                    'month': month,
+                                    'day': day}
+                        json.dump(settings, stats)
+
+    def get_settings(self):
+        with open('personal_plays_settings.json', 'r', encoding='UTF-8') as stats:
+            settings = json.load(stats)
+            start_year = settings['year']
+            start_month = settings['month']
+            start_day = settings['day']
+            return start_year, start_month, start_day
+
+    def get_own_dict2(self):
+        starting_year = 2022
+        lastfm_user = self.pylast_net.get_user(self.my_lastfm_username)
+        try:
+            with open('personal_plays.json', 'r', encoding='UTF-8') as stats:
+                top_artists = json.load(stats)
+                updated_list = self.get_own_dict()
+                for artist in updated_list.keys():
+                    top_artists.update({artist: updated_list.get(artist)})
+        except FileNotFoundError:
+            with open('personal_plays.json', 'w', encoding='UTF-8') as stats:
+                top_artists = self.get_own_dict()
+                json.dump(top_artists, stats)
+
+        try:
+            year, month, day = self.get_settings()
+        except FileNotFoundError:
+            self.set_settings(starting_year, 1, 1)
+            year, month, day = self.get_settings()
+
+        while year <= 2024:
+            while month <= 12:
+                print(f"Start {year}, {month}, {day}")
+                break_flag = 0
+                while day <= 31:
+                    try:
+                        start = dt.datetime(year, month, day, 1, 1)
+                    except ValueError:
+                        break
+                    try:
+                        end = dt.datetime(year, month, day + 1, 1, 1)
+                    except ValueError:
+                        try:
+                            end = dt.datetime(year, month + 1, 1, 1, 1)
+                        except ValueError:
+                            end = dt.datetime(year + 1, 1, 1, 1, 1)
+                        break_flag = 1
+                    utc_start = calendar.timegm(start.utctimetuple())
+                    utc_end = calendar.timegm(end.utctimetuple())
+                    tracks = lastfm_user.get_recent_tracks(time_from=utc_start, time_to=utc_end, limit=None)  # Pro level would be adaptive by the time this function call takes.
+                    time.sleep(1)
+                    # tracks = lastfm_user.get_recent_tracks(limit=None)
+                    for track in tqdm(tracks):
+                        artist = str(track.track.artist)
+                        if artist not in top_artists.keys():
+                            lastfm_artist = pylast.Artist(artist, self.pylast_net, username=self.my_lastfm_username)
+                            plays = lastfm_artist.get_userplaycount()
+                            top_artists.update({artist: plays})
+                            time.sleep(1)
+                    with open('personal_plays.json', 'w', encoding='UTF-8') as stats:
+                        json.dump(top_artists, stats)
+                    self.set_settings(year, month, day)
+                    if break_flag:
+                        break
+                    day += 1
+                month += 1
+                day = 1
+            year += 1
+            month = 1
+
 
 if __name__ == "__main__":
     pg = Playlist_Generator()
     print("## Generating list for farming own crowns ##")
-    pg.generate_list_to_increase_own_plays(30, 1000)
-    print("\n## Generating list for stealing others crowns ##")
-    pg.steal_crowns(30, 100)
+    pg.generate_list_to_increase_own_plays(30, 100)
+    # print("\n## Generating list for stealing others crowns ##")
+    # pg.steal_crowns(30, 100)
+    # pg.get_own_dict2()
