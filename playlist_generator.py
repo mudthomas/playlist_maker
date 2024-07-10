@@ -177,7 +177,7 @@ class Playlist_Generator:
         lastfm_user = advanced_User(self.my_lastfm_username, self.pylast_net)
         ret = {}
         page_no = 1
-        while not len(ret.keys()):
+        while len(ret.keys() < 5):  # A minimum of 5 artists will be added to the list, pretty arbitrarily chosen, but it avoids a playlist created with only one artist.
             top_artists = lastfm_user.get_top_artists(limit=1000, page=page_no)
             for a in top_artists:
                 if int(a.weight) < scrobble_target:
@@ -300,66 +300,6 @@ class Playlist_Generator:
             start_day = settings['day']
             return start_year, start_month, start_day
 
-    def get_own_dict2(self):
-        starting_year = 2022
-        lastfm_user = self.pylast_net.get_user(self.my_lastfm_username)
-        try:
-            with open('personal_plays.json', 'r', encoding='UTF-8') as stats:
-                top_artists = json.load(stats)
-                updated_list = self.get_own_dict()
-                for artist in updated_list.keys():
-                    top_artists.update({artist: updated_list.get(artist)})
-        except FileNotFoundError:
-            with open('personal_plays.json', 'w', encoding='UTF-8') as stats:
-                top_artists = self.get_own_dict()
-                json.dump(top_artists, stats)
-
-        try:
-            year, month, day = self.get_settings()
-        except FileNotFoundError:
-            self.set_settings(starting_year, 1, 1)
-            year, month, day = self.get_settings()
-
-        while year <= 2024:
-            while month <= 12:
-                print(f"Start {year}, {month}, {day}")
-                break_flag = 0
-                while day <= 31:
-                    try:
-                        start = dt.datetime(year, month, day, 1, 1)
-                    except ValueError:
-                        break
-                    try:
-                        end = dt.datetime(year, month, day + 1, 1, 1)
-                    except ValueError:
-                        try:
-                            end = dt.datetime(year, month + 1, 1, 1, 1)
-                        except ValueError:
-                            end = dt.datetime(year + 1, 1, 1, 1, 1)
-                        break_flag = 1
-                    utc_start = calendar.timegm(start.utctimetuple())
-                    utc_end = calendar.timegm(end.utctimetuple())
-                    tracks = lastfm_user.get_recent_tracks(time_from=utc_start, time_to=utc_end, limit=None)  # Pro level would be adaptive by the time this function call takes.
-                    time.sleep(1)
-                    # tracks = lastfm_user.get_recent_tracks(limit=None)
-                    for track in tqdm(tracks):
-                        artist = str(track.track.artist)
-                        if artist not in top_artists.keys():
-                            lastfm_artist = pylast.Artist(artist, self.pylast_net, username=self.my_lastfm_username)
-                            plays = lastfm_artist.get_userplaycount()
-                            top_artists.update({artist: plays})
-                            time.sleep(1)
-                    with open('personal_plays.json', 'w', encoding='UTF-8') as stats:
-                        json.dump(top_artists, stats)
-                    self.set_settings(year, month, day)
-                    if break_flag:
-                        break
-                    day += 1
-                month += 1
-                day = 1
-            year += 1
-            month = 1
-
 
 if __name__ == "__main__":
     pg = Playlist_Generator()
@@ -367,4 +307,3 @@ if __name__ == "__main__":
     pg.generate_list_to_increase_own_plays(30, 100)
     # print("\n## Generating list for stealing others crowns ##")
     # pg.steal_crowns(30, 100)
-    # pg.get_own_dict2()
