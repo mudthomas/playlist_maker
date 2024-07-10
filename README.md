@@ -6,7 +6,8 @@ Discord is a communications platform where people with similar intrests meet on 
 
 I frequent music oriented servers where a last.fm bot is used. When a user has logged the most plays of an artist they are rewarded a crown (i.e. fake internet point). Usually a lower limit is set for when a crown is to be awarded, the default is 30 plays.
 
-Since I am Swedish I am naturally adept at competing in music, instead of enjoying it. For more information on this, see ABBA.
+Since I am Swedish I am naturally adept at competing in music instead of enjoying it. For more information on this, see Eurovision Song Contest.
+Furthermore, Swedes do not just compete in music, we win. For more information on this, see ABBA.
 
 Of course, cheating is not an option. So instead of just scrobbling songs in order to win, I need to listen to them. I first did this manually, that is looking at my last.fm account and then just playing the relevant artists on Spotify. However, this takes time management. Also, sometimes it leads to me "over-listening" an artist, e.g. getting 55 plays instead of stopping at 30.
 
@@ -31,9 +32,9 @@ Also a 'blacklist_artists.txt' can be added with one artist per line. These arti
 ## The issues
 
 The code is not fool proof. Here are the issues I have noticed, and will probably ignore.
-* A search of the artist name supplied from last.fm is done on the Spotify API. The assumption is made that the first result is the correct artist. This is not always true. The code is verbose to be able to double check this.
+* A search of the artist name supplied from last.fm is done on the Spotify API. The assumption is made that the first result is the correct artist. This is not always true. The code is verbose in order for the user to be able to double check this.
 * There is sometimes discrepancies between the attribution done by Spotify and last.fm. This can result in the wrong artist being added to the playlist.
-* Pylast has not implemented the last.fm API way of fetching more than 1000 artist. When I have surpassed this limit myself I might consider a work around. I read on somewhere that there is no limit on the "recent plays".
+* At this time, Pylast has not implemented the last.fm API way of fetching more than 1000 top artist. As a workaround this code includes an extension of the pylast.User class, where this is implemented. A pull request might be sent to Pylast.
 
 ## The future
 
