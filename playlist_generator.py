@@ -2,9 +2,6 @@ import json
 import pylast
 import spotipy
 import time
-import calendar
-import datetime as dt
-from tqdm import tqdm
 
 
 class advanced_User(pylast.User):
@@ -20,15 +17,12 @@ class advanced_User(pylast.User):
           o PERIOD_6MONTHS
           o PERIOD_12MONTHS
         """
-
         params = self._get_params()
         params["period"] = period
         params["page"] = page
         if limit:
             params["limit"] = limit
-
         doc = self._request(self.ws_prefix + ".getTopArtists", True, params)
-
         return pylast._extract_top_artists(doc, self.network)
 
 
@@ -149,36 +143,44 @@ class Playlist_Generator:
             track_ids = track_ids[100:]
 
     def get_own_dict(self):
-        """Fetches the 1000 top artist for the logged in user.
-        1000 is currently a limitation of pylast.
+        """Fetches all top artist for the logged in user.
 
         Returns:
             {artist: scrobbles}: A dictionary with artist as keys and scrobbles as values.
         """
-        # lastfm_user = self.pylast_net.get_user(self.my_lastfm_username)
         lastfm_user = advanced_User(self.my_lastfm_username, self.pylast_net)
-        top_artists = lastfm_user.get_top_artists(limit=1000, page=1)
+        page_no = 1
         ret = {}
-        for a in top_artists:
-            ret.update({a.item.get_name(): int(a.weight)})
+        while True:
+            top_artists = lastfm_user.get_top_artists(limit=1000, page=page_no)
+            time.sleep(1)
+            if len(top_artists):
+                for a in top_artists:
+                    ret.update({a.item.get_name(): int(a.weight)})
+                page_no += 1
+            else:
+                break
         return ret
 
-    def get_plays_needed(self, scrobble_target):
-        """Fetches the 1000 top artist for the logged in user, filters out those that are over the target.
-        1000 is currently a limitation of pylast.
+    def get_plays_needed(self, scrobble_target, min_artists=20):
+        """Fetches the 1000 top artist for the logged in user and filters out those with scrobbles over the target.
+        If the result is less than min_artists, the process is repeated for the next 1000 top artists.
 
         Args:
             scrobble_target (int): Number of scrobbles that should be reached.
+            min_artists (int, optional): The minimum number of artist fetched. Defaults to 20.
 
         Returns:
             {artist: scrobbles}: A dictionary with artist as keys and number of plays needed to reach target as values.
         """
-        # lastfm_user = self.pylast_net.get_user(self.my_lastfm_username)
         lastfm_user = advanced_User(self.my_lastfm_username, self.pylast_net)
         ret = {}
         page_no = 1
-        while len(ret.keys() < 5):  # A minimum of 5 artists will be added to the list, pretty arbitrarily chosen, but it avoids a playlist created with only one artist.
+        while len(ret.keys()) < max(min_artists, len(self.blacklist_artists) + 1):
             top_artists = lastfm_user.get_top_artists(limit=1000, page=page_no)
+            if not len(top_artists):  # Failsafe, just in case all artists have been fetched.
+                break
+            time.sleep(1)
             for a in top_artists:
                 if int(a.weight) < scrobble_target:
                     ret.update({a.item.get_name(): scrobble_target - int(a.weight)})
@@ -186,22 +188,23 @@ class Playlist_Generator:
         return ret
 
     def get_opponent_dict(self, opponent_lastfm_username, scrobble_target=30):
-        """Fetches the 1000 top artist for the specified user, filters out those that are under the target.
-        1000 is currently a limitation of pylast.
+        """Fetches the top artist for the specified user that are over or equal to the target.
 
         Returns:
             {artist: scrobbles}: A dictionary with artist as keys and scrobbles as values.
         """
-        # lastfm_user = self.pylast_net.get_user(opponent_lastfm_username)
         lastfm_user = advanced_User(opponent_lastfm_username, self.pylast_net)
-        top_artists = lastfm_user.get_top_artists(limit=1000)
         ret = {}
-        for a in top_artists:
-            if int(a.weight) >= scrobble_target:
-                ret.update({a.item.get_name(): int(a.weight)})
-            else:
-                break
-        return ret
+        page_no = 1
+        while True:
+            top_artists = lastfm_user.get_top_artists(limit=1000, page=page_no)
+            time.sleep(1)
+            for a in top_artists:
+                if int(a.weight) >= scrobble_target:
+                    ret.update({a.item.get_name(): int(a.weight)})
+                else:
+                    return ret
+            page_no += 1
 
     def generate_list_to_increase_own_plays(self, scrobble_target=30, number_of_tracks=500):
         """Populates the 'Farming playlist' with enough plays to reach target for each artist.
@@ -285,25 +288,11 @@ class Playlist_Generator:
                 break
         return track_ids[:max_entries]
 
-    def set_settings(self, year, month, day):
-        with open('personal_plays_settings.json', 'w', encoding='UTF-8') as stats:
-                        settings = {'year': year,
-                                    'month': month,
-                                    'day': day}
-                        json.dump(settings, stats)
-
-    def get_settings(self):
-        with open('personal_plays_settings.json', 'r', encoding='UTF-8') as stats:
-            settings = json.load(stats)
-            start_year = settings['year']
-            start_month = settings['month']
-            start_day = settings['day']
-            return start_year, start_month, start_day
 
 
 if __name__ == "__main__":
     pg = Playlist_Generator()
     print("## Generating list for farming own crowns ##")
-    pg.generate_list_to_increase_own_plays(30, 100)
-    # print("\n## Generating list for stealing others crowns ##")
-    # pg.steal_crowns(30, 100)
+    pg.generate_list_to_increase_own_plays(30, 500)
+    print("\n## Generating list for stealing others crowns ##")
+    pg.steal_crowns(30, 100)
