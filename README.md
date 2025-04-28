@@ -32,8 +32,8 @@ Also a 'blacklist_artists.txt' can be added with one artist per line. These arti
 ## The issues
 
 The code is not fool proof. Here are the issues I have noticed, and will probably ignore.
-* A search of the artist name supplied from last.fm is done on the Spotify API. The assumption is made that the first result is the correct artist. This is not always true. The code is verbose in order for the user to be able to double check this.
-* There is sometimes discrepancies between the attribution done by Spotify and last.fm. This can result in the wrong artist being added to the playlist.
+* ~~A search of the artist name supplied from last.fm is done on the Spotify API. The assumption is made that the first result is the correct artist. This is not always true. The code is verbose in order for the user to be able to double check this.~~ Code now takes the first 10 results and only proceeds if the last.fm and Spotify artists are equal. Issues still exists for multiple artists of same name.
+* ~~There is sometimes discrepancies between the attribution done by Spotify and last.fm. This can result in the wrong artist being added to the playlist.~~ Songs are now only added if the wanted artist is the 'main' artist.
 * At this time, Pylast has not implemented the last.fm API way of fetching more than 1000 top artist. As a workaround this code includes an extension of the pylast.User class, where this is implemented. A pull request might be sent to Pylast.
 
 ## The future
