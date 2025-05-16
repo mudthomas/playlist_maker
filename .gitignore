@@ -4,8 +4,6 @@ blacklist_artists.txt
 opponent_scrobbles.json
 make_executable.py
 *.bkup
-/build
-/dist
 
 .spec
 
