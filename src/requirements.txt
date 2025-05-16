@@ -1,0 +1,2 @@
+pylast==5.5.0
+spotipy==2.25.1
