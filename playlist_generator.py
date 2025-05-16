@@ -115,17 +115,13 @@ class Playlist_Generator:
         Args:
             playlist_id (str): The id of the playlist to be cleared.
         """
-        counter = 0
-        while True:
-            old_items = self.spot.playlist_items(playlist_id)
-            counter += len(old_items["items"])
-            if len(old_items["items"]):
-                uri_list = []
-                for item in old_items["items"]:
-                    uri_list.append(item["track"]["uri"])
-                self.spot.playlist_remove_all_occurrences_of_items(playlist_id, uri_list)
-            else:
-                break
+        tracks = self.spot.playlist_items(playlist_id)["items"]
+        counter = len(tracks)
+        while len(tracks):
+            self.spot.playlist_remove_all_occurrences_of_items(playlist_id, [track["track"]["uri"] for track in tracks])
+            tracks = self.spot.playlist_items(playlist_id)["items"]
+            counter += len(tracks)
+            time.sleep(1)
         print(f"Removed {counter} tracks from playlist")
         time.sleep(2)
 
@@ -137,12 +133,14 @@ class Playlist_Generator:
             track_ids ([str]): A list of spotify track ids
             playlist_id (str): A spotify playlist id
         """
+        number_of_tracks = len(track_ids)
         while len(track_ids):  # Maximum of 100 tracks can be added at a time.
             self.spot.user_playlist_add_tracks(user=self.spot.me()['id'],
                                                playlist_id=playlist_id,
                                                tracks=track_ids[:100])
             track_ids = track_ids[100:]
             time.sleep(2)
+        print(f"Added {number_of_tracks} tracks to playlist")
 
     def get_own_dict(self):
         """Fetches all top artist for the logged in user.
@@ -237,7 +235,7 @@ class Playlist_Generator:
         self.clean_playlist(playlist_id)
         self.add_to_playlist(track_ids, playlist_id)
 
-    def steal_crowns(self, scrobble_target=30, number_of_tracks=500):
+    def steal_crowns(self, scrobble_target=30, number_of_tracks=500, reuse=False, overtake=False):
         """Populates the 'Stealing playlist' with enough plays to overtake opponents.
         The number of songs per artists are also limited to their spotify top tracks.
 
@@ -246,29 +244,86 @@ class Playlist_Generator:
             number_of_tracks (int, optional): Number of songs to be added to playlist. Defaults to 500.
         """
         my_top_artists = self.get_own_dict()
-        top_artists = self.get_opponent_dict(self.opponent_list[0], scrobble_target)
 
-        for opponent in self.opponent_list[1:]:
-            opponent_dict = self.get_opponent_dict(opponent, scrobble_target)
-            for artist, scrobbles in opponent_dict.items():
-                top_artists.update({artist: max(scrobbles, top_artists.get(artist, 0))})
+        if reuse:
+            with open('opponent_scrobbles.json', 'r', encoding='UTF-8') as opp:
+                top_artists = json.load(opp)
+        else:
+            top_artists = self.get_opponent_dict(self.opponent_list[0], scrobble_target)
+            for opponent in self.opponent_list[1:]:
+                opponent_dict = self.get_opponent_dict(opponent, scrobble_target)
+                for artist, scrobbles in opponent_dict.items():
+                    top_artists.update({artist: max(scrobbles, top_artists.get(artist, 0))})
+            with open('opponent_scrobbles.json', 'w', encoding='UTF-8') as opp:
+                json.dump(top_artists, opp)
 
-        top_artists_list = []
-        for artist, scrobbles in top_artists.items():
-            scrobbles -= my_top_artists.get(artist, 0)
-            if 0 <= scrobbles <= scrobble_target * 2:
-                if artist not in self.blacklist_artists:
-                    top_artists_list.append([artist, scrobbles + 1])
-        top_artists_list.sort(key=lambda x: x[1])
+        if overtake:  # Using the overtake flag only adds artist with at least one scrobble
+            top_artists_list = []
+            for artist, scrobbles in top_artists.items():
+                my_scrobbles = my_top_artists.get(artist, 0)
+                if my_scrobbles:
+                    scrobbles -= my_scrobbles
+                    if artist not in self.blacklist_artists and scrobbles >= 0:
+                        top_artists_list.append([artist, scrobbles + 1])
+            top_artists_list.sort(key=lambda x: x[1])
+        else:
+            top_artists_list = []
+            for artist, scrobbles in top_artists.items():
+                if scrobbles >= scrobble_target:
+                    scrobbles -= my_top_artists.get(artist, 0)
+                    if 0 <= scrobbles <= scrobble_target:
+                        if artist not in self.blacklist_artists:
+                            top_artists_list.append([artist, scrobbles + 1])
+            top_artists_list.sort(key=lambda x: x[1])
 
-        # 0 <= scrobbles - my_scrobbles skips those where you already have the crown
-        # scrobbles - my_scrobbles <= scrobble_target * 2 skips those where you 'might as well' listen to a new artist,
-        # or increase those you have like 1 scrobble on. Adjust if list empty I guess.
-        # Generally, keeping the list as small as possible makes the sorting faster.
+        # 0 <= scrobbles - my_scrobbles <= scrobble_target
+        # skips those where you already have the crown and skips those where you 'might as well' listen to a new artist.
+        #
+        # An alternative would be
+        # 0 <= scrobbles - my_scrobbles <= scrobble_target * 2
+        # If we consider that stealing is better than "starting a new artist".
 
         track_ids = self.get_track_ids(top_artists_list, number_of_tracks)
         self.clean_playlist(self.stealing_playlist)
         self.add_to_playlist(track_ids, self.stealing_playlist)
+
+    def clean_string(self, input_string):
+        string_to_clean = input_string.lower()
+        if len(string_to_clean) > 4:
+            if string_to_clean[0:4] == 'the ':
+                string_to_clean = string_to_clean[4:]
+        while True:
+            for i in range(len(string_to_clean)):
+                if string_to_clean[i] == '&':
+                    string_to_clean = string_to_clean[:i] + "and" + string_to_clean[i + 1:]
+                    break
+            else:
+                break
+        return ''.join(e for e in string_to_clean if e.isalnum())
+
+    def get_artist_top_tracks(self, artist):
+        track_ids = []
+        try:
+            search_results = self.spot.search(q=f"{artist[0]}", limit=50, type='artist')
+            for i in range(len(search_results["artists"]["items"])):
+                if self.clean_string(search_results["artists"]["items"][i]['name']) == self.clean_string(artist[0]):
+                    tracks = self.spot.artist_top_tracks(search_results["artists"]["items"][i]["uri"])
+                    no_tracks = len(tracks["tracks"])
+                    while len(track_ids) < min(artist[1], no_tracks):
+                        try:
+                            track = tracks["tracks"].pop(0)
+                            if self.clean_string(track['artists'][0]['name']) == self.clean_string(artist[0]):
+                                track_ids.append(track["uri"])
+                        except IndexError:
+                            # Popped all tracks
+                            return track_ids
+                    return track_ids
+            else:
+                # print(f"No artist match for {artist[0]}")
+                return None
+        except IndexError:
+            # print(f"No search results for {artist[0]}")
+            return None
 
     def get_track_ids(self, top_artists, max_entries=500):
         """Generates a list of spotify track ids from input artist and needed number of plays.
@@ -282,32 +337,46 @@ class Playlist_Generator:
         """
         track_ids = []
         for artist in top_artists:
-            try:
-                search_results = self.spot.search(q=f"\"{artist[0]}\"", limit=10, type='artist')
-                for i in range(len(search_results["artists"]["items"])):
-                    if search_results["artists"]["items"][i]['name'] == artist[0]:
-                        # This check lowers the risk of adding the wrong artist
-                        tracks = self.spot.artist_top_tracks(search_results["artists"]["items"][0]["uri"])
-                        no_tracks = len(tracks["tracks"])
-                        track_counter = 0
-                        while track_counter < min(artist[1], no_tracks):
-                            try:
-                                track = tracks["tracks"].pop(0)
-                                if track['artists'][0]['name'] == artist[0]:
-                                    # This check tries to ensure that artist is main artist of track
-                                    track_ids.append(track["uri"])
-                                    track_counter += 1
-                            except IndexError:
-                                # Popped all tracks
-                                break
-                        print(artist)
-                        if len(track_ids) >= max_entries:
-                            return track_ids[:max_entries]
-                        time.sleep(1)
-                        break
-            except IndexError:
-                # No search results
-                print(f"Error for {artist[0]}")
+            temp_tracks = self.get_artist_top_tracks(artist)
+            time.sleep(1)
+            if temp_tracks is None and '&' in artist[0]:                          # Replace '&'
+                temp_tracks = self.get_artist_top_tracks([artist[0].replace('&', 'and'), artist[1]])
+                if temp_tracks is None and artist[0][:4].lower() == "the ":       # Replace '&', remove 'the '
+                    temp_tracks = self.get_artist_top_tracks([artist[0][4:], artist[1]])
+                elif temp_tracks is None and artist[0][:4].lower() != "the ":     # Replace '&', add 'the'
+                    temp_tracks = self.get_artist_top_tracks(["the " + artist[0], artist[1]])
+            if temp_tracks is None and 'and ' in artist[0]:                     # Replace 'and '
+                temp_tracks = self.get_artist_top_tracks([artist[0].replace('and ', '& '), artist[1]])
+                if temp_tracks is None and artist[0][:4].lower() == "the ":       # Replace 'and ', remove 'the '
+                    temp_tracks = self.get_artist_top_tracks([artist[0][4:], artist[1]])
+                elif temp_tracks is None and artist[0][:4].lower() != "the ":     # Replace 'and ', add 'the'
+                    temp_tracks = self.get_artist_top_tracks(["the " + artist[0], artist[1]])
+            if temp_tracks is None:
+                if artist[0][:4].lower() == "the ":                                 # Remove 'the '
+                    temp_tracks = self.get_artist_top_tracks([artist[0][4:], artist[1]])
+                elif artist[0][:4].lower() != "the ":                                 # Add 'the '
+                    temp_tracks = self.get_artist_top_tracks(["the " + artist[0], artist[1]])
+            if temp_tracks is None:
+                temp_tracks = self.get_artist_top_tracks([artist[0].lower(), artist[1]])
+            if temp_tracks is None:
+                temp_tracks = self.get_artist_top_tracks([artist[0].upper(), artist[1]])
+
+            if temp_tracks is not None:
+                art_print_string = artist[0] + ":"
+                if len(artist[0]) < 32:
+                    art_print_string = " " * (8 - (len(artist[0]) + 1) % 8) + art_print_string
+                while len(art_print_string) < 32:
+                    art_print_string = " " * 8 + art_print_string
+                print(art_print_string + f" {len(temp_tracks)} of {artist[1]}")
+            if temp_tracks is None:
+                print(f"Failed for {artist[0]}.")
+            elif len(temp_tracks) == 0:
+                print(f"Found no songs for {artist[0]}.")
+            else:
+                for track in temp_tracks:
+                    track_ids.append(track)
+                if len(track_ids) > max_entries:
+                    return track_ids[:max_entries]
         return track_ids
 
 
@@ -316,6 +385,6 @@ if __name__ == "__main__":
     scrobble_target = 30  # This is the default bot setting using .fmbot. If your Discord hub is different, change it.
     pg = Playlist_Generator()
     print("## Generating list for farming own crowns ##")
-    pg.generate_list_to_increase_own_plays(scrobble_target, 1000)
+    pg.generate_list_to_increase_own_plays(scrobble_target, 500)  # The main one
     print("\n## Generating list for stealing others crowns ##")
-    pg.steal_crowns(30, 1000)
+    pg.steal_crowns(scrobble_target, 500, reuse=True, overtake=False)
