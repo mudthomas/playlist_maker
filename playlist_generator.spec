@@ -13,6 +13,7 @@ a = Analysis(
     excludes=[],
     noarchive=False,
     optimize=0,
+    hiddenimports=['json', 'time'],
 )
 pyz = PYZ(a.pure)
 
