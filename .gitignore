@@ -5,7 +5,7 @@ opponent_scrobbles.json
 make_executable.py
 *.bkup
 
-.spec
+*.spec
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
