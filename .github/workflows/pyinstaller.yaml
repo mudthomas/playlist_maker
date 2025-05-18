@@ -29,15 +29,6 @@ jobs:
         with:
           path: src
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: playlist_generator
-          path: src/dist/windows
-      - name: Checkout code
-        uses: actions/checkout@v2
-      - name: Build project # This would actually build your project, using zip for an example artifact
-        run: |
-          zip --junk-paths my-artifact README.md
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
