@@ -387,4 +387,4 @@ if __name__ == "__main__":
     print("## Generating list for farming own crowns ##")
     pg.generate_list_to_increase_own_plays(scrobble_target, 500)  # The main one
     print("\n## Generating list for stealing others crowns ##")
-    pg.steal_crowns(scrobble_target, 500, reuse=True, overtake=False)
+    pg.steal_crowns(scrobble_target, 500, reuse=False, overtake=False)
