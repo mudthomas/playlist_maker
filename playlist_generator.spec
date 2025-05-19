@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['src\\playlist_generator.py'],
+    ['playlist_generator.py'],
     pathex=[],
     binaries=[],
     datas=[],
