@@ -382,9 +382,19 @@ class Playlist_Generator:
 
 if __name__ == "__main__":
     # If error prone, consider adding more time.Sleep where applicable. Or increasing existing timers.
-    scrobble_target = 30  # This is the default bot setting using .fmbot. If your Discord hub is different, change it.
     pg = Playlist_Generator()
-    print("## Generating list for farming own crowns ##")
-    pg.generate_list_to_increase_own_plays(scrobble_target, 500)  # The main one
+
+    try:
+        scrobble_target = int(input("Enter scrobble target (Default=30): "))
+    except ValueError:
+        scrobble_target = 30  # This is the default bot setting using .fmbot. If your Discord hub is different, change it.
+
+    try:
+        playlist_length = int(input("Enter playlist length (Default=500): "))
+    except ValueError:
+        playlist_length = 500
+
+    print("\n## Generating list for farming own crowns ##")
+    pg.generate_list_to_increase_own_plays(scrobble_target, playlist_length)  # The main one
     print("\n## Generating list for stealing others crowns ##")
-    pg.steal_crowns(scrobble_target, 500, reuse=False, overtake=False)
+    pg.steal_crowns(scrobble_target, playlist_length, reuse=False, overtake=False)

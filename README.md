@@ -32,12 +32,11 @@ Also a 'blacklist_artists.txt' can be added with one artist per line. These arti
 ## The issues
 
 The code is not fool proof. Here are the issues I have noticed, and will probably ignore.
-* ~~A search of the artist name supplied from last.fm is done on the Spotify API. The assumption is made that the first result is the correct artist. This is not always true. The code is verbose in order for the user to be able to double check this.~~ Code now takes the first 10 results and only proceeds if the last.fm and Spotify artists are equal. Issues still exists for multiple artists of same name.
-* ~~There is sometimes discrepancies between the attribution done by Spotify and last.fm. This can result in the wrong artist being added to the playlist.~~ Songs are now only added if the wanted artist is the 'main' artist.
+* Code now takes the first 50 results and only proceeds if the last.fm and Spotify artists are equal. Issues still exists for multiple artists of same name.
+* Songs are now only added if the wanted artist is the 'main' artist. This can result in no songs being added if the top ten are all songs featuring the wanted artist.
 * At this time, Pylast has not implemented the last.fm API way of fetching more than 1000 top artist. As a workaround this code includes an extension of the pylast.User class, where this is implemented. A pull request might be sent to Pylast.
 
 ## The future
 
-* I might make an executable to let other, jealous users make use of it.
 * Perhaps I will look into incorporating Discord API in order to send commands to the bot. For now I make use of the crownseeder admin command.
 * It would be cool to include the weight of different opponents. Since for example, stealing the crown of the person just below you is better than the very last person. Also, I have not considered that the user might not actually be number one already, silly me. Stealing from people above you would clearly be more advantageous.
