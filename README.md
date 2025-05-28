@@ -38,7 +38,8 @@ The code is not fool proof. Here are the issues I have noticed, and will probabl
 
 ## The future
 
-* Save more runtime information to save on calls. For example, what startpage to use for lastfm API.
+* Save more runtime information to save on calls. For example, what startpage to use for lastfm API, how many days since last lastfm pull (for reusing data, especially for opponent scrobbles)
+* Add check for own user in opponent list, just as a safety deal.
 * Using the code through executable, I have realized that a settings.txt would be nice.
 * The code can be a bit touchy with bad connection, atm it kills the code. I should apply some loops together with try-excepts.
 * Generate logs
