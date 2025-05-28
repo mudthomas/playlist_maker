@@ -40,5 +40,8 @@ The code is not fool proof. Here are the issues I have noticed, and will probabl
 
 * Using the code through executable, I have realized that a settings.txt would be nice.
 * The code can be a bit touchy with bad connection, atm it kills the code. I should apply some loops together with try-excepts.
+* Generate logs
+* Add songs in order of 'plays found' not 'plays wanted'. This would make artists with fewer available songs move up.
+* Possibility of adding albums instead of songs?
 * Perhaps I will look into incorporating Discord API in order to send commands to the bot. For now I make use of the crownseeder admin command.
 * It would be cool to include the weight of different opponents. Since for example, stealing the crown of the person just below you is better than the very last person. Also, I have not considered that the user might not actually be number one already, silly me. Stealing from people above you would clearly be more advantageous.
