@@ -37,6 +37,8 @@ The code is not fool proof. Here are the issues I have noticed, and will probabl
 * At this time, Pylast has not implemented the last.fm API way of fetching more than 1000 top artist. As a workaround this code includes an extension of the pylast.User class, where this is implemented. A pull request might be sent to Pylast.
 
 ## The future
+
+* As the opponent scrobbles are saved now, they could be popped if user is leading, saving cycles on later uses.
 * Change the hardcoded Sleep times into an adaptive sleep from 429-errors.
 * Add sanity checks. e.g. for values of scrobble target.
 * I have noticed a lot of bands with names in non-latin scrips failing. I should look over my slapped-together filters (and alt-names) so they don't fail these without reason.
