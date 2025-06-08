@@ -2,6 +2,9 @@ import json
 import pylast
 import spotipy
 import time
+import yaml
+
+BIG_NUMBER = 1000000  # Maybe replace this with inf or something...
 
 
 class advanced_User(pylast.User):
@@ -27,7 +30,13 @@ class advanced_User(pylast.User):
 
 
 class Playlist_Generator:
-    def __init__(self):
+    def __init__(self, settings):
+        self.general_settings = settings['general_settings']
+        self.farming_settings = settings['farming_settings']
+        self.stealing_settings = settings['stealing_settings']
+        self.verbose = self.general_settings['verbose']
+        self.fail_list, self.no_songs_list = {}, {}
+
         try:
             with open('auth.json', 'r', encoding='UTF-8') as auth:
                 credentials = json.load(auth)
@@ -48,7 +57,7 @@ class Playlist_Generator:
                 self.farming_playlist = credentials['FARMING_PLAYLIST_ID']
                 self.stealing_playlist = credentials['STEALING_PLAYLIST_ID']
         except FileNotFoundError:
-            print("No auth.json found.")
+            print("No auth.json found. If you generate an auth.json your credentials will be saved in plain text. It is possible to run the script without credentials saved, but they will still be stored in memory, I have no interest to construct a workaround for that at this point in time.")
             while True:
                 generate_flag = input("Generate auth.json? Otherwise credentials will not be saved. (y/n): ")
                 if generate_flag in ['Y', 'y', 'N', 'n']:
@@ -99,17 +108,19 @@ class Playlist_Generator:
         try:
             with open('opponent_list.txt', 'r') as f:
                 while True:
-                    line = f.readline()
+                    line = f.readline().strip()
                     if not line:
                         break
-                    self.opponent_list.append(line.strip())
+                    if line != self.my_lastfm_username.strip():  # Sanity check if own name is in opponent list
+                        self.opponent_list.append(line)
         except FileNotFoundError:
             print("No opponent_list.txt found. Generating new, empty file.")
             with open('opponent_list.txt', 'x') as f:
                 pass
 
-    def clean_playlist(self, playlist_id):
-        """Clears a playlist of entries.
+
+    def empty_playlist(self, playlist_id):
+        """Empties a spotify playlist of its entries.
         Because of limitations, only a hundred tracks are removed at a time.
 
         Args:
@@ -121,9 +132,8 @@ class Playlist_Generator:
             self.spot.playlist_remove_all_occurrences_of_items(playlist_id, [track["track"]["uri"] for track in tracks])
             tracks = self.spot.playlist_items(playlist_id)["items"]
             counter += len(tracks)
-            time.sleep(1)
-        print(f"Removed {counter} tracks from playlist")
-        time.sleep(2)
+        if self.verbose:
+            print(f"Removed {counter} tracks from playlist")
 
     def add_to_playlist(self, track_ids, playlist_id):
         """Adds tracks to a spotify playlist.
@@ -134,35 +144,17 @@ class Playlist_Generator:
             playlist_id (str): A spotify playlist id
         """
         number_of_tracks = len(track_ids)
-        while len(track_ids):  # Maximum of 100 tracks can be added at a time.
+        tracks_added = 0
+        while tracks_added < number_of_tracks:
             self.spot.user_playlist_add_tracks(user=self.spot.me()['id'],
                                                playlist_id=playlist_id,
-                                               tracks=track_ids[:100])
-            track_ids = track_ids[100:]
-            time.sleep(2)
-        print(f"Added {number_of_tracks} tracks to playlist")
+                                               tracks=track_ids[tracks_added:tracks_added + 100])
+            tracks_added += 100
+        if self.verbose:
+            print(f"Added {number_of_tracks} tracks to playlist")
 
-    def get_own_dict(self):
-        """Fetches all top artist for the logged in user.
-
-        Returns:
-            {artist: scrobbles}: A dictionary with artist as keys and scrobbles as values.
-        """
-        lastfm_user = advanced_User(self.my_lastfm_username, self.pylast_net)
-        page_no = 1
-        ret = {}
-        while True:
-            top_artists = lastfm_user.get_top_artists(limit=1000, page=page_no)
-            if len(top_artists):
-                for a in top_artists:
-                    ret.update({a.item.get_name(): int(a.weight)})
-            else:
-                break
-            time.sleep(1)
-            page_no += 1
-        return ret
-
-    def get_plays_needed(self, scrobble_target, min_artists=100):
+    def get_user_scrobbles(self, lastfm_username, max_scrobbles=BIG_NUMBER, min_scrobbles=1,
+                           min_artists=BIG_NUMBER, starting_page=1):
         """Fetches the 1000 top artist for the logged in user and filters out those with scrobbles over the target.
         If the result is less than min_artists, the process is repeated for the next 1000 top artists.
 
@@ -173,44 +165,62 @@ class Playlist_Generator:
         Returns:
             {artist: scrobbles}: A dictionary with artist as keys and number of plays needed to reach target as values.
         """
-        lastfm_user = advanced_User(self.my_lastfm_username, self.pylast_net)
+        lastfm_user = advanced_User(lastfm_username, self.pylast_net)
+        page_no = starting_page
         ret = {}
-        page_no = 1
-        while len(ret.keys()) < max(min_artists, len(self.blacklist_artists) + 1):
+        while len(ret.keys()) < min_artists:
             top_artists = lastfm_user.get_top_artists(limit=1000, page=page_no)
             if len(top_artists):  # Failsafe, just in case all artists have been fetched.
                 for a in top_artists:
-                    if int(a.weight) < scrobble_target:
-                        ret.update({a.item.get_name(): scrobble_target - int(a.weight)})
+                    if max_scrobbles > int(a.weight):
+                        if int(a.weight) >= min_scrobbles:
+                            ret.update({a.item.get_name(): int(a.weight)})
+                        else:
+                            break
+                if int(top_artists[-1].weight) < min_scrobbles:
+                    break
             else:
                 break
             time.sleep(1)
             page_no += 1
         return ret
 
-    def get_opponent_dict(self, opponent_lastfm_username, scrobble_target=30):
-        """Fetches the top artist for the specified user that are over or equal to the target.
+    def get_own_full_dict(self):
+        """Fetches all top artist for the logged in user.
 
         Returns:
             {artist: scrobbles}: A dictionary with artist as keys and scrobbles as values.
         """
-        lastfm_user = advanced_User(opponent_lastfm_username, self.pylast_net)
-        ret = {}
-        page_no = 1
-        while True:
-            top_artists = lastfm_user.get_top_artists(limit=1000, page=page_no)
-            if len(top_artists):  # Failsafe, just in case all artists have been fetched.
-                for a in top_artists:
-                    if int(a.weight) >= scrobble_target:
-                        ret.update({a.item.get_name(): int(a.weight)})
-                    else:
-                        return ret
-            else:
-                return ret
-            time.sleep(1)
-            page_no += 1
+        return self.get_user_scrobbles(lastfm_username=self.my_lastfm_username)
 
-    def generate_list_to_increase_own_plays(self, scrobble_target=30, number_of_tracks=500):
+    def get_own_scrobbles(self, scrobble_target, min_artists=100, starting_page=1):
+        """Fetches the 1000 top artist for the logged in user and filters out those with scrobbles over the target.
+        If the result is less than min_artists, the process is repeated for the next 1000 top artists.
+
+        Args:
+            scrobble_target (int): Number of scrobbles that should be reached.
+            min_artists (int, optional): The minimum number of artist fetched. Defaults to 20.
+            starting_page (int, optional): The first relevant result page from lastfm. Defaults to 1.
+
+        Returns:
+            {artist: scrobbles}: A dictionary with artist as keys and number of plays needed to reach target as values.
+        """
+        return self.get_user_scrobbles(lastfm_username=self.my_lastfm_username,
+                                       max_scrobbles=scrobble_target,
+                                       min_artists=min_artists,
+                                       starting_page=starting_page)
+
+    def get_opponent_scrobbles(self, opponent_lastfm_username, scrobble_target=30):
+        """Fetches the top artists for the specified user that are over or equal to the target.
+
+        Returns:
+            {artist: scrobbles}: A dictionary with artist as keys and scrobbles as values.
+        """
+        return self.get_user_scrobbles(lastfm_username=opponent_lastfm_username,
+                                       min_scrobbles=scrobble_target,
+                                       starting_page=1)
+
+    def farm_crowns(self):
         """Populates the 'Farming playlist' with enough plays to reach target for each artist.
         The number of songs per artists are also limited to their spotify top tracks.
 
@@ -218,24 +228,21 @@ class Playlist_Generator:
             scrobble_target (int, optional): The target number of scrobbles per artist. Defaults to 30.
             number_of_tracks (int, optional): Number of songs to be added to playlist. Defaults to 500.
         """
-        self.generate_list(self.farming_playlist, scrobble_target, number_of_tracks)
-
-    def generate_list(self, playlist_id, scrobble_target=30, number_of_tracks=500):
-        """Generates a playlist with enough plays to reach target for each artist.
-        The number of songs per artists are also limited to their spotify top tracks.
-
-        Args:
-            playlist_id (str): The playlist to populate.
-            scrobble_target (int, optional): The target number of scrobbles per artist. Defaults to 30.
-            number_of_tracks (int, optional): Number of songs to be added to playlist. Defaults to 500.
-        """
-        top_artists = self.get_plays_needed(scrobble_target)
-        top_artists = [[key, value] for key, value in top_artists.items() if key not in self.blacklist_artists]
+        scrobble_target = self.farming_settings['crown_goal']
+        number_of_tracks = self.farming_settings['playlist_length']
+        starting_page = self.farming_settings['starting_page']
+        if self.verbose:
+            print("\n## Generating list for farming own crowns ##")
+        playlist_id = self.farming_playlist
+        top_artists = self.get_own_scrobbles(scrobble_target, starting_page)
+        top_artists = [[key, scrobble_target - value] for key, value in top_artists.items() if key not in self.blacklist_artists]
         track_ids = self.get_track_ids(top_artists, number_of_tracks)
-        self.clean_playlist(playlist_id)
+        self.empty_playlist(playlist_id)
         self.add_to_playlist(track_ids, playlist_id)
+        self.farming_settings['last_run'] = int(time.strftime('%j'))
+        return True
 
-    def steal_crowns(self, scrobble_target=30, number_of_tracks=500, reuse=False, overtake=False):
+    def steal_crowns(self):
         """Populates the 'Stealing playlist' with enough plays to overtake opponents.
         The number of songs per artists are also limited to their spotify top tracks.
 
@@ -243,38 +250,45 @@ class Playlist_Generator:
             scrobble_target (int, optional): Lower scrobble limit of opponent entries to target. Defaults to 30.
             number_of_tracks (int, optional): Number of songs to be added to playlist. Defaults to 500.
         """
-        my_top_artists = self.get_own_dict()
-
+        if self.verbose:
+            print("\n## Generating list for stealing others crowns ##")
+        scrobble_target = self.stealing_settings['crown_goal']
+        number_of_tracks = self.stealing_settings['playlist_length']
+        my_top_artists = self.get_own_full_dict()
+        reuse = self.should_opp_scrobbles_be_reused()
         if reuse:
-            with open('opponent_scrobbles.json', 'r', encoding='UTF-8') as opp:
-                top_artists = json.load(opp)
-        else:
-            top_artists = self.get_opponent_dict(self.opponent_list[0], scrobble_target)
+            if self.verbose:
+                print("## Reusing previous opponent scrobbles ##")
+            try:
+                with open('opponent_scrobbles.json', 'r', encoding='UTF-8') as opp:
+                    top_artists = json.load(opp)
+            except FileNotFoundError:
+                print("No previous opponent scrobbles found, getting new instead.")
+                reuse = False
+            if not len(top_artists):
+                print("Old list empty, getting new instead.")
+                reuse = False
+        if not reuse:
+            if self.verbose:
+                print("## Downloading opponent scrobbles ##")
+            top_artists = self.get_opponent_scrobbles(self.opponent_list[0], scrobble_target)
             for opponent in self.opponent_list[1:]:
-                opponent_dict = self.get_opponent_dict(opponent, scrobble_target)
+                opponent_dict = self.get_opponent_scrobbles(opponent, scrobble_target)
                 for artist, scrobbles in opponent_dict.items():
                     top_artists.update({artist: max(scrobbles, top_artists.get(artist, 0))})
             with open('opponent_scrobbles.json', 'w', encoding='UTF-8') as opp:
                 json.dump(top_artists, opp)
 
-        if overtake:  # Using the overtake flag only adds artist with at least one scrobble
-            top_artists_list = []
-            for artist, scrobbles in top_artists.items():
-                my_scrobbles = my_top_artists.get(artist, 0)
-                if my_scrobbles:
-                    scrobbles -= my_scrobbles
-                    if artist not in self.blacklist_artists and scrobbles >= 0:
+        top_artists_list = []
+        remove_list = []
+        for artist, scrobbles in top_artists.items():
+            if scrobbles >= scrobble_target:
+                scrobbles -= my_top_artists.get(artist, 0)
+                if 0 <= scrobbles <= scrobble_target * 2:
+                    if artist not in self.blacklist_artists:
                         top_artists_list.append([artist, scrobbles + 1])
-            top_artists_list.sort(key=lambda x: x[1])
-        else:
-            top_artists_list = []
-            for artist, scrobbles in top_artists.items():
-                if scrobbles >= scrobble_target:
-                    scrobbles -= my_top_artists.get(artist, 0)
-                    if 0 <= scrobbles <= scrobble_target:
-                        if artist not in self.blacklist_artists:
-                            top_artists_list.append([artist, scrobbles + 1])
-            top_artists_list.sort(key=lambda x: x[1])
+                else:
+                    remove_list.append(artist)
 
         # 0 <= scrobbles - my_scrobbles <= scrobble_target
         # skips those where you already have the crown and skips those where you 'might as well' listen to a new artist.
@@ -283,9 +297,20 @@ class Playlist_Generator:
         # 0 <= scrobbles - my_scrobbles <= scrobble_target * 2
         # If we consider that stealing is better than "starting a new artist".
 
+        top_artists_list.sort(key=lambda x: x[1])
         track_ids = self.get_track_ids(top_artists_list, number_of_tracks)
-        self.clean_playlist(self.stealing_playlist)
+        self.empty_playlist(self.stealing_playlist)
         self.add_to_playlist(track_ids, self.stealing_playlist)
+        if len(remove_list):
+            for artist in remove_list:
+                top_artists.pop(artist)
+            with open('opponent_scrobbles.json', 'w', encoding='UTF-8') as opp:
+                json.dump(top_artists, opp)
+        if not reuse:
+            self.stealing_settings['last_opponent_save'] = int(time.strftime('%j'))
+            self.stealing_settings['saved_opponent_goal'] = self.stealing_settings['crown_goal']
+        self.stealing_settings['last_run'] = int(time.strftime('%j'))
+        return True
 
     def clean_string(self, input_string):
         string_to_clean = input_string.lower()
@@ -304,7 +329,7 @@ class Playlist_Generator:
     def get_artist_top_tracks(self, artist):
         track_ids = []
         try:
-            search_results = self.spot.search(q=f"{artist[0]}", limit=50, type='artist')
+            search_results = self.search_artist(artist[0])
             for i in range(len(search_results["artists"]["items"])):
                 if self.clean_string(search_results["artists"]["items"][i]['name']) == self.clean_string(artist[0]):
                     tracks = self.spot.artist_top_tracks(search_results["artists"]["items"][i]["uri"])
@@ -319,11 +344,20 @@ class Playlist_Generator:
                             return track_ids
                     return track_ids
             else:
-                # print(f"No artist match for {artist[0]}")
                 return None
-        except IndexError:
-            # print(f"No search results for {artist[0]}")
+        except (IndexError, TypeError):
             return None
+
+    def search_artist(self, artist_name, max_retries=1):
+        search_results = None
+        for i in range(max_retries):
+            try:
+                return self.spot.search(q=artist_name, limit=50, type='artist')
+            except KeyboardInterrupt:
+                raise KeyboardInterrupt
+            except:
+                pass
+        return search_results
 
     def get_track_ids(self, top_artists, max_entries=500):
         """Generates a list of spotify track ids from input artist and needed number of plays.
@@ -335,10 +369,10 @@ class Playlist_Generator:
         Returns:
             [str]: A list of spotify track ids. No longer than max_entries.
         """
-        track_ids = []
+        track_ids = [[], [], [], [], [], [], [], [], [], []]
+        tracks_added = 0
         for artist in top_artists:
             temp_tracks = self.get_artist_top_tracks(artist)
-            time.sleep(1)
             if temp_tracks is None and '&' in artist[0]:                          # Replace '&'
                 temp_tracks = self.get_artist_top_tracks([artist[0].replace('&', 'and'), artist[1]])
                 if temp_tracks is None and artist[0][:4].lower() == "the ":       # Replace '&', remove 'the '
@@ -360,8 +394,7 @@ class Playlist_Generator:
                 temp_tracks = self.get_artist_top_tracks([artist[0].lower(), artist[1]])
             if temp_tracks is None:
                 temp_tracks = self.get_artist_top_tracks([artist[0].upper(), artist[1]])
-
-            if temp_tracks is not None:
+            if self.verbose and temp_tracks is not None:
                 art_print_string = artist[0] + ":"
                 if len(artist[0]) < 32:
                     art_print_string = " " * (8 - (len(artist[0]) + 1) % 8) + art_print_string
@@ -369,32 +402,61 @@ class Playlist_Generator:
                     art_print_string = " " * 8 + art_print_string
                 print(art_print_string + f" {len(temp_tracks)} of {artist[1]}")
             if temp_tracks is None:
-                print(f"Failed for {artist[0]}.")
+                if self.verbose:
+                    print(f"Failed for {artist[0]}.")
+                self.fail_list.update({artist[0]: max(artist[1], self.fail_list.get(artist[1], 0))})
             elif len(temp_tracks) == 0:
-                print(f"Found no songs for {artist[0]}.")
+                if self.verbose:
+                    print(f"Found no songs for {artist[0]}.")
+                self.no_songs_list.update({artist[0]: max(artist[1], self.no_songs_list.get(artist[1], 0))})
             else:
-                for track in temp_tracks:
-                    track_ids.append(track)
-                if len(track_ids) > max_entries:
-                    return track_ids[:max_entries]
-        return track_ids
+                if tracks_added + len(temp_tracks) > max_entries:
+                    temp_tracks = temp_tracks[:max_entries - tracks_added]
+                    track_ids[len(temp_tracks) - 1].extend(temp_tracks)
+                    tracks_added += len(temp_tracks)
+                    break
+                else:
+                    track_ids[len(temp_tracks) - 1].extend(temp_tracks)
+                    tracks_added += len(temp_tracks)
+        return_track_ids = []
+        for mini_list in track_ids:
+            return_track_ids.extend(mini_list)
+        return return_track_ids
+
+    def make_logs(self):
+        with open('log.yaml', 'w') as yaml_file:
+            dumpfile = {}
+            dumpfile = {'failed_artist': self.fail_list, 'no_songs': self.no_songs_list}
+            yaml.dump(dumpfile, yaml_file)
+
+    def save_settings(self):
+        with open('config.yaml', 'w') as yaml_file:
+            dumpfile = {'general_settings': self.general_settings,
+                        'farming_settings': self.farming_settings,
+                        'stealing_settings': self.stealing_settings}
+            yaml.dump(dumpfile, yaml_file)
+
+    def should_opp_scrobbles_be_reused(self):
+        if self.stealing_settings['last_opponent_save'] == 0:
+            return False
+        elif self.stealing_settings['saved_opponent_goal'] > self.stealing_settings['crown_goal']:
+            return False
+        else:
+            current_day = int(time.strftime('%j'))
+            if self.stealing_settings['last_opponent_save'] > current_day:
+                current_day += 366
+            if current_day >= self.stealing_settings['last_opponent_save'] + self.stealing_settings['reuse']:
+                return False
+        return True
 
 
 if __name__ == "__main__":
-    # If error prone, consider adding more time.Sleep where applicable. Or increasing existing timers.
-    pg = Playlist_Generator()
-
-    try:
-        scrobble_target = int(input("Enter scrobble target (Default=30): "))
-    except ValueError:
-        scrobble_target = 30  # This is the default bot setting using .fmbot. If your Discord hub is different, change it.
-
-    try:
-        playlist_length = int(input("Enter playlist length (Default=500): "))
-    except ValueError:
-        playlist_length = 500
-
-    print("\n## Generating list for farming own crowns ##")
-    pg.generate_list_to_increase_own_plays(scrobble_target, playlist_length)  # The main one
-    print("\n## Generating list for stealing others crowns ##")
-    pg.steal_crowns(scrobble_target, playlist_length, reuse=False, overtake=False)
+    with open('config.yaml', 'r') as file:
+        settings = yaml.safe_load(file)
+    pg = Playlist_Generator(settings)
+    if settings['farming_settings']['active']:
+        pg.farm_crowns()
+    if settings['stealing_settings']['active']:
+        pg.steal_crowns()
+    pg.make_logs()
+    pg.save_settings()

@@ -4,8 +4,8 @@ blacklist_artists.txt
 opponent_scrobbles.json
 make_executable.py
 *.bkup
-
 *.spec
+log.yaml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

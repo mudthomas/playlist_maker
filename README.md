@@ -21,7 +21,9 @@ A playlist is also generated to overtake the last.fm users in 'opponent_list.txt
 
 I have also added functionality to increase own plays to specific targets. I did this in order to push certain artists off of my top 100.
 
-#### NOTE: User passwords and API keys are stored as plain text in auth.json. If you do not like this, there is a possibility to not save credentials after the session. I have no idea if this can be read from memory by some other malicious program.
+### NOTE: User passwords and API keys are stored as plain text in auth.json. If you do not like this, there is a possibility to not save credentials after the session. I have no idea if this can be read from memory by some other malicious program.
+
+### NOTE: The config.yaml is automatically modified by the code. IF you make any manual changes while the code is running, they will be overwritten.
 
 For API accounts for last.fm and Spotify, see the following links:
 * last.fm: https://www.last.fm/api
@@ -38,16 +40,18 @@ The code is not fool proof. Here are the issues I have noticed, and will probabl
 
 ## The future
 
-* As the opponent scrobbles are saved now, they could be popped if user is leading, saving cycles on later uses.
+* ~~As the opponent scrobbles are saved now, they could be popped if user is leading, saving cycles on later uses.~~ Done
 * Change the hardcoded Sleep times into an adaptive sleep from 429-errors.
 * Add sanity checks. e.g. for values of scrobble target.
 * I have noticed a lot of bands with names in non-latin scrips failing. I should look over my slapped-together filters (and alt-names) so they don't fail these without reason.
-* Save more runtime information to save on calls. For example, what startpage to use for lastfm API, how many days since last lastfm pull (for reusing data, especially for opponent scrobbles)
-* Add check for own user in opponent list, just as a safety deal.
-* Using the code through executable, I have realized that a settings.txt would be nice.
+* Save more runtime information to save on calls.
+    * ~~what startpage to use for lastfm API~~ Not saved (too many checks imo). But added as an option in config.yaml
+    * ~~how many days since last lastfm pull (for reusing data, especially for opponent scrobbles)~~ Done.
+* ~~Add check for own user in opponent list, just as a safety deal.~~ Done.
+* ~~Using the code through executable, I have realized that a settings.txt would be nice.~~ Done. Now using config.yaml for settings.
 * The code can be a bit touchy with bad connection, atm it kills the code. I should apply some loops together with try-excepts.
-* Generate logs
-* Add songs in order of 'plays found' not 'plays wanted'. This would make artists with fewer available songs move up.
+* ~~Generate logs~~
+* ~~Add songs in order of 'plays found' not 'plays wanted'. This would make artists with fewer available songs move up.~~ Done.
 * Possibility of adding albums instead of songs?
 * Perhaps I will look into incorporating Discord API in order to send commands to the bot. For now I make use of the crownseeder admin command.
 * It would be cool to include the weight of different opponents. Since for example, stealing the crown of the person just below you is better than the very last person. Also, I have not considered that the user might not actually be number one already, silly me. Stealing from people above you would clearly be more advantageous.
