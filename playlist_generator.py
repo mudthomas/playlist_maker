@@ -451,8 +451,25 @@ class Playlist_Generator:
 
 
 if __name__ == "__main__":
-    with open('config.yaml', 'r') as file:
-        settings = yaml.safe_load(file)
+    try:
+        with open('config.yaml', 'r') as file:
+            settings = yaml.safe_load(file)
+    except FileNotFoundError:
+        with open('config.yaml', 'w') as yaml_file:
+            settings = {'general_settings': {'verbose': 1},
+                        'farming_settings': {'active': 1,
+                                             'crown_goal': 30,
+                                             'last_run': 0,
+                                             'playlist_length': 500,
+                                             'starting_page': 1},
+                        'stealing_settings': {'active': 1,
+                                              'crown_goal': 30,
+                                              'last_opponent_save': 0,
+                                              'last_run': 0,
+                                              'playlist_length': 500,
+                                              'reuse': 7,
+                                              'saved_opponent_goal': 30}}
+            yaml.dump(settings, yaml_file)
     pg = Playlist_Generator(settings)
     if settings['farming_settings']['active']:
         pg.farm_crowns()
