@@ -40,6 +40,8 @@ The code is not fool proof. Here are the issues I have noticed, and will probabl
 
 ## The future
 
+* End in summarizing splash screen instead of quiet quitting and me not knowing if it failed.
+* Methods returning True on completion instead of void methods.
 * ~~As the opponent scrobbles are saved now, they could be popped if user is leading, saving cycles on later uses.~~ Done
 * Change the hardcoded Sleep times into an adaptive sleep from 429-errors.
 * Add sanity checks. e.g. for values of scrobble target.
