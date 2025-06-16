@@ -7,6 +7,8 @@ make_executable.py
 *.spec
 log.yaml
 config.yaml
+error_log.txt
+saved_artists.yaml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
