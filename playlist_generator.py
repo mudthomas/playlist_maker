@@ -460,58 +460,71 @@ class Playlist_Generator:
     def get_artist_track_ids(self, artist):
         try:
             saved_artist = self.saved_artists[artist[0]]
+            if not len(saved_artist['genres']):
+                saved_artist['genres'] = ['+ NO GENRE +']
+                self.saved_artists.update({artist[0]: saved_artist})
             if len(self.genres) and not self.check_genres(saved_artist['genres']):
                 raise GenreError(saved_artist['genres'])
             if self.popular:
                 track_ids = saved_artist['popular']
                 if len(track_ids):
                     print("Used saved info")
-                    return track_ids[:artist[1]]
                 else:
-                    pop_track_ids = []
-                    full_track_ids = saved_artist['full']
+                    artist_uri = saved_artist["uri"]
+                    tracks = self.filter_tracks(artist[0], self.get_artist_popular_tracks(artist_uri))
+                    track_ids = [track['uri'] for track in tracks]
+                    saved_artist['popular'] = [track['uri'] for track in tracks]
+                    self.saved_artists.update({artist[0]: saved_artist})
             else:
                 track_ids = saved_artist['full']
                 if len(track_ids):
                     print("Used saved info")
-                    return track_ids[:artist[1]]
                 else:
-                    pop_track_ids = saved_artist['popular']
-                    full_track_ids = []
+                    artist_uri = saved_artist["uri"]
+                    tracks = self.filter_tracks(artist[0], self.get_all_artist_tracks(artist_uri))
+                    tracks = {track['name']: track for track in tracks}
+                    tracks = [[track['uri'], track['duration_ms']] for track in tracks.values()]
+                    tracks.sort(key=lambda x: x[1])
+                    track_ids = [track[0] for track in tracks]
+                    saved_artist['full'] = track_ids
+                    self.saved_artists.update({artist[0]: saved_artist})
+            return track_ids[:artist[1]]
         except KeyError:
-            pop_track_ids = []
-            full_track_ids = []
-        try:
-            search_results = self.search_artist(artist[0])
-            for i in range(len(search_results["artists"]["items"])):
-                if self.clean_string(search_results["artists"]["items"][i]['name']) == self.clean_string(artist[0]):
-                    if len(self.genres) and not self.check_genres(search_results['artists']['items'][i]['genres']):
+            try:
+                full_track_ids = []
+                pop_track_ids = []
+                search_results = self.search_artist(artist[0])
+                for i in range(len(search_results["artists"]["items"])):
+                    if self.clean_string(search_results["artists"]["items"][i]['name']) == self.clean_string(artist[0]):
+                        artist_uri = search_results["artists"]["items"][i]["uri"]
+                        if len(self.genres) and not self.check_genres(search_results['artists']['items'][i]['genres']):
+                            self.saved_artists.update({artist[0]: {'popular': pop_track_ids,
+                                                                'full': full_track_ids,
+                                                                'genres': search_results['artists']['items'][i]['genres'],
+                                                                'uri': artist_uri,
+                                                                'date': int(time.strftime('%j'))}})
+                            raise GenreError(search_results['artists']['items'][i]['genres'])
+                        if self.popular:
+                            tracks = self.filter_tracks(artist[0], self.get_artist_popular_tracks(artist_uri))
+                            track_ids = [track['uri'] for track in tracks]
+                            pop_track_ids = track_ids
+                        else:
+                            tracks = self.filter_tracks(artist[0], self.get_all_artist_tracks(artist_uri))
+                            tracks = {track['name']: track for track in tracks}
+                            tracks = [[track['uri'], track['duration_ms']] for track in tracks.values()]
+                            tracks.sort(key=lambda x: x[1])
+                            track_ids = [track[0] for track in tracks]
+                            full_track_ids = track_ids
                         self.saved_artists.update({artist[0]: {'popular': pop_track_ids,
                                                                'full': full_track_ids,
                                                                'genres': search_results['artists']['items'][i]['genres'],
+                                                               'uri': artist_uri,
                                                                'date': int(time.strftime('%j'))}})
-                        raise GenreError(search_results['artists']['items'][i]['genres'])
-                    artist_uri = search_results["artists"]["items"][i]["uri"]
-                    if self.popular:
-                        tracks = self.filter_tracks(artist[0], self.get_artist_popular_tracks(artist_uri))
-                        track_ids = [track['uri'] for track in tracks]
-                        pop_track_ids = track_ids
-                    else:
-                        tracks = self.filter_tracks(artist[0], self.get_all_artist_tracks(artist_uri))
-                        tracks = {track['name']: track for track in tracks}
-                        tracks = [[track['uri'], track['duration_ms']] for track in tracks.values()]
-                        tracks.sort(key=lambda x: x[1])
-                        track_ids = [track[0] for track in tracks]
-                        full_track_ids = track_ids
-                    self.saved_artists.update({artist[0]: {'popular': pop_track_ids,
-                                                           'full': full_track_ids,
-                                                           'genres': search_results['artists']['items'][i]['genres'],
-                                                           'date': int(time.strftime('%j'))}})
-                    self.save_local_artist_info()
-                    return track_ids[:artist[1]]
-            return None
-        except (IndexError, TypeError):
-            return None
+                        self.save_local_artist_info()
+                        return track_ids[:artist[1]]
+                return None
+            except (IndexError, TypeError):
+                return None
 
     def search_artist(self, artist_name, max_retries=1):
         for i in range(max_retries):
