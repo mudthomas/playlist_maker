@@ -486,6 +486,10 @@ class Playlist_Generator:
             for i in range(len(search_results["artists"]["items"])):
                 if self.clean_string(search_results["artists"]["items"][i]['name']) == self.clean_string(artist[0]):
                     if len(self.genres) and not self.check_genres(search_results['artists']['items'][i]['genres']):
+                        self.saved_artists.update({artist[0]: {'popular': pop_track_ids,
+                                                               'full': full_track_ids,
+                                                               'genres': search_results['artists']['items'][i]['genres'],
+                                                               'date': int(time.strftime('%j'))}})
                         raise GenreError(search_results['artists']['items'][i]['genres'])
                     artist_uri = search_results["artists"]["items"][i]["uri"]
                     if self.popular:
