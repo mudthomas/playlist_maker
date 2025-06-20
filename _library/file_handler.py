@@ -1,4 +1,23 @@
 import yaml
+import json
+
+
+# YAML Getters
+def read_yaml(filename):
+    try:
+        with open(filename, 'r') as file:
+            ret = yaml.safe_load(file)
+    except FileNotFoundError:
+        ret = {}
+    return ret
+
+
+def get_failed_artists():
+    return read_yaml('failed_artists.yaml')
+
+
+def get_no_song_artists():
+    return read_yaml('no_song_artists.yaml')
 
 
 def get_config():
@@ -7,25 +26,9 @@ def get_config():
             settings = yaml.safe_load(file)
             verify_config(settings)
     except FileNotFoundError:
-        settings = generate_config()
+        settings = generate_settings()
+        write_yaml('config.yaml', settings)
     return settings
-
-
-def get_saved_artists():
-    try:
-        with open('saved_artists.yaml', 'r') as file:
-            return yaml.safe_load(file)
-    except FileNotFoundError:
-        return {}
-
-
-def save_artist_info(artist_info):
-    try:
-        with open('saved_artists.yaml', 'w') as file:
-            yaml.dump(artist_info, file)
-        return True
-    except:
-        return False
 
 
 def verify_config(settings):
@@ -35,18 +38,29 @@ def verify_config(settings):
                 if isinstance(settings[setting_set]['genres'], list):
                     for genre in settings[setting_set]['genres']:
                         if not isinstance(genre, str):
-                            raise ValueError(f"Error in config.yaml, {setting_set}, {setting}. Value should be an a list of strings.")
+                            raise ValueError(
+                                f"Error in config.yaml, {setting_set}, {setting}. Value should be an a list of strings."
+                            )
                 else:
-                    raise ValueError(f"Error in config.yaml, {setting_set}, {setting}. Value should be an a list of strings.")
+                    raise ValueError(
+                        f"Error in config.yaml, {setting_set}, {setting}. Value should be an a list of strings."
+                    )
             else:
                 if not isinstance(settings[setting_set][setting], int):
                     raise ValueError(f"Error in config.yaml, {setting_set}, {setting}. Value should be an integer.")
 
 
-def generate_config():
+# YAML Setters
+def write_yaml(filename, dumpfile):
+    with open(filename, 'w') as yaml_file:
+        yaml.dump(dumpfile, yaml_file)
+    return True
+
+
+def generate_settings():
     settings = {'general_settings': {'verbose': 1,
-                                     'sleep_time_spotify': 0,
-                                     'sleep_time_lastfm': 0,
+                                     'sleep_time_Spotify': 0,
+                                     'sleep_time_Lastfm': 0,
                                      'genres': [],
                                      'popular': 1},
                 'farming_settings': {'active': 1,
@@ -62,11 +76,34 @@ def generate_config():
                                       'playlist_length': 500,
                                       'reuse': 7,
                                       'saved_opponent_goal': 30}}
-    with open('config.yaml', 'w') as yaml_file:
-        yaml.dump(settings, yaml_file)
     return settings
 
 
+# JSON
+def get_saved_artists():
+    try:
+        with open('saved_artists.json', 'r', encoding='UTF-8') as file:
+            saved_art = json.load(file)
+    except FileNotFoundError:
+        try:
+            with open('saved_artists.yaml', 'r') as file:
+                saved_art = yaml.safe_load(file)
+        except FileNotFoundError:
+            saved_art = {}
+    return saved_art
+
+
+def save_artist_info(artist_info):
+    return write_json('saved_artists.json', artist_info)
+
+
+def write_json(filename, dumpfile):
+    with open(filename, 'w') as json_file:
+        json.dump(dumpfile, json_file)
+    return True
+
+
+# TXT Getters
 def get_blacklist():
     return _get_list_from_txt('blacklist_artists.txt')
 
@@ -91,7 +128,8 @@ def _get_list_from_txt(filename):
     return ret_list
 
 
-def write_yaml(filename, dumpfile):
-    with open(filename, 'w') as yaml_file:
-        yaml.dump(dumpfile, yaml_file)
+# TXT Setters
+def append_string_to_txt(filename, dump_string):
+    with open(filename, 'a') as f:
+        print(dump_string, file=f)
     return True

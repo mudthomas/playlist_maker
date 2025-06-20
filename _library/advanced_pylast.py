@@ -1,7 +1,7 @@
-import pylast
+import pylast as pl
 
 
-class advanced_pylast_User(pylast.User):
+class advanced_pylast_User(pl.User):
     PERIOD_OVERALL = "overall"
 
     def get_top_artists(self, period=PERIOD_OVERALL, limit=None, page=1):
@@ -20,4 +20,4 @@ class advanced_pylast_User(pylast.User):
         if limit:
             params["limit"] = limit
         doc = self._request(self.ws_prefix + ".getTopArtists", True, params)
-        return pylast._extract_top_artists(doc, self.network)
+        return pl._extract_top_artists(doc, self.network)

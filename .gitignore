@@ -8,7 +8,10 @@ make_executable.py
 log.yaml
 config.yaml
 error_log.txt
+saved_artists.json
 saved_artists.yaml
+failed_artists.yaml
+no_song_artists.yaml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
