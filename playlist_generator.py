@@ -275,7 +275,7 @@ class Playlist_Generator:
             try:
                 search_results = self.spot.search(q=artist_name, limit=50, type='artist')
                 time.sleep(self.Spotify_sleep_time)
-                return search_results
+                return search_results["artists"]["items"]
             except KeyboardInterrupt:
                 raise KeyboardInterrupt
             except Exception as e:
@@ -369,10 +369,10 @@ class Playlist_Generator:
                         continue
                     scrobbles -= my_scrobble
                     if 0 <= scrobbles:
-                        if scrobble_target * (lim_multiplier - 1) <= scrobbles < scrobble_target * lim_multiplier:
-                            top_artists_list.append([artist, scrobbles + 1])
+                        top_artists_list.append([artist, scrobbles + 1])
                     else:
-                        self.remove_list.append(artist[0])
+                        self.remove_list.append(artist)
+
             top_artists_list.sort(key=lambda x: x[1])
             temp_track_ids = self.get_track_ids(top_artists_list, number_of_tracks, len(track_ids))
             if len(temp_track_ids):
@@ -387,7 +387,10 @@ class Playlist_Generator:
         self.add_to_playlist(track_ids, self.stealing_playlist)
         if len(self.remove_list):
             for artist in self.remove_list:
-                top_artists.pop(artist)
+                try:
+                    top_artists.pop(artist)
+                except KeyError:
+                    continue
             with open('opponent_scrobbles.json', 'w', encoding='UTF-8') as opp:
                 json.dump(top_artists, opp)
         if not reuse:
@@ -439,13 +442,21 @@ class Playlist_Generator:
                 raise GenreError(saved_artist['genres'])
             elif self.popular:
                 if not len(saved_artist['popular']):
-                    tracks = self.filter_tracks(artist[0], self.get_artist_popular_tracks(saved_artist["uri"]))
+                    try:
+                        search_name = saved_artist['search_name']
+                    except KeyError:
+                        search_name = artist[0]
+                    tracks = self.filter_tracks(search_name, self.get_artist_popular_tracks(saved_artist["uri"]))
                     saved_artist['popular'] = [track['uri'] for track in tracks]
                     self.saved_artists.update({artist[0]: saved_artist})
                 return saved_artist['popular'][:artist[1]]
             else:
                 if not len(saved_artist['full']):
-                    tracks = self.filter_tracks(artist[0], self.get_all_artist_tracks(saved_artist["uri"]))
+                    try:
+                        search_name = saved_artist['search_name']
+                    except KeyError:
+                        search_name = artist[0]
+                    tracks = self.filter_tracks(search_name, self.get_all_artist_tracks(saved_artist["uri"]))
                     tracks = {track['name']: track for track in tracks}
                     tracks = [[track['uri'], track['duration_ms']] for track in tracks.values()]
                     tracks.sort(key=lambda x: x[1])
@@ -453,38 +464,47 @@ class Playlist_Generator:
                     self.saved_artists.update({artist[0]: saved_artist})
                 return saved_artist['full'][:artist[1]]
         except KeyError:
-            try:
-                search_results = self.search_artist(artist[0])
-                for i in range(len(search_results["artists"]["items"])):
-                    if self.clean_string(search_results["artists"]["items"][i]['name']) == self.clean_string(artist[0]):
-                        artist_dict = {'full': [],
-                                       'popular': [],
-                                       'uri': search_results["artists"]["items"][i]["uri"],
-                                       'genres': search_results['artists']['items'][i]['genres'],
-                                       'date': int(time.strftime('%j'))}
-                        if not len(artist_dict['genres']):
-                            artist_dict.update({'genres': ['+ NO GENRE +']})
-                        if len(self.genres) and not self.check_genres(artist_dict['genres']):
+            search_name_methods = [lambda x: x,
+                                   lambda x: x.replace(' and ', ' & ').replace(' och ', ' & '),
+                                   lambda x: x.lower(),
+                                   lambda x: x.upper(),
+                                   lambda x: ''.join(c for c in x if c.isalnum())]
+            for search_name_method in search_name_methods:
+                try:
+                    search_name = search_name_method(artist[0])
+                    search_results = self.search_artist(search_name)
+                    for i in range(len(search_results)):
+                        if self.clean_string(search_results[i]['name']) == self.clean_string(search_name):
+                            artist_dict = {'full': [],
+                                           'popular': [],
+                                           'uri': search_results[i]["uri"],
+                                           'genres': search_results[i]['genres'],
+                                           'date': int(time.strftime('%j')),
+                                           'search_name': search_name}
+                            if not len(artist_dict['genres']):
+                                artist_dict.update({'genres': ['+ NO GENRE +']})
+                            if len(self.genres) and not self.check_genres(artist_dict['genres']):
+                                self.saved_artists.update({artist[0]: artist_dict})
+                                raise GenreError(search_results[i]['genres'])
+                            if self.popular:
+                                tracks = self.filter_tracks(search_name, self.get_artist_popular_tracks(artist_dict['uri']))
+                                track_ids = [track['uri'] for track in tracks]
+                                artist_dict['popular'] = track_ids
+                            else:
+                                tracks = self.filter_tracks(search_name, self.get_all_artist_tracks(artist_dict['uri']))
+                                tracks = {track['name']: track for track in tracks}
+                                tracks = [[track['uri'], track['duration_ms']] for track in tracks.values()]
+                                tracks.sort(key=lambda x: x[1])
+                                track_ids = [track[0] for track in tracks]
+                                artist_dict['full'] = track_ids
                             self.saved_artists.update({artist[0]: artist_dict})
-                            raise GenreError(search_results['artists']['items'][i]['genres'])
-                        if self.popular:
-                            tracks = self.filter_tracks(artist[0], self.get_artist_popular_tracks(artist_dict['uri']))
-                            track_ids = [track['uri'] for track in tracks]
-                            artist_dict['popular'] = track_ids
-                        else:
-                            tracks = self.filter_tracks(artist[0], self.get_all_artist_tracks(artist_dict['uri']))
-                            tracks = {track['name']: track for track in tracks}
-                            tracks = [[track['uri'], track['duration_ms']] for track in tracks.values()]
-                            tracks.sort(key=lambda x: x[1])
-                            track_ids = [track[0] for track in tracks]
-                            artist_dict['full'] = track_ids
-                        self.saved_artists.update({artist[0]: artist_dict})
-                        return track_ids[:artist[1]]
-                else:
+                            return track_ids[:artist[1]]
+                except (IndexError, TypeError):
+                    # Should this be search-error?
+                    # Is this even reached?
+                    print("### I am here ###")
                     raise ArtistNotFoundError(artist)
-            except (IndexError, TypeError):
-                # Should this be search-error?
-                # Is this even reached?
+            else:
                 raise ArtistNotFoundError(artist)
 
     def get_track_ids(self, top_artists, max_entries=500, no_of_old_results=0):
@@ -503,18 +523,6 @@ class Playlist_Generator:
         for artist in top_artists:
             try:
                 temp_tracks = self.get_artist_track_ids(artist)
-                # if temp_tracks is None and '&' in artist[0]:                          # Replace '&'
-                #     temp_tracks = self.get_artist_track_ids([artist[0].replace('&', 'and'), artist[1]])
-                #     if temp_tracks is None and artist[0][:4].lower() == "the ":       # Replace '&', remove 'the '
-                #         temp_tracks = self.get_artist_track_ids([artist[0][4:], artist[1]])
-                #     elif temp_tracks is None and artist[0][:4].lower() != "the ":     # Replace '&', add 'the'
-                #         temp_tracks = self.get_artist_track_ids(["the " + artist[0], artist[1]])
-                # if temp_tracks is None and 'and ' in artist[0]:                     # Replace 'and '
-                #     temp_tracks = self.get_artist_track_ids([artist[0].replace('and ', '& '), artist[1]])
-                #     if temp_tracks is None and artist[0][:4].lower() == "the ":       # Replace 'and ', remove 'the '
-                #         temp_tracks = self.get_artist_track_ids([artist[0][4:], artist[1]])
-                #     elif temp_tracks is None and artist[0][:4].lower() != "the ":     # Replace 'and ', add 'the'
-                #         temp_tracks = self.get_artist_track_ids(["the " + artist[0], artist[1]])
                 # if temp_tracks is None:
                 #     if artist[0][:4].lower() == "the ":                                 # Remove 'the '
                 #         temp_tracks = self.get_artist_track_ids([artist[0][4:], artist[1]])
@@ -525,6 +533,7 @@ class Playlist_Generator:
                 # if temp_tracks is None:
                 #     temp_tracks = self.get_artist_track_ids([artist[0].upper(), artist[1]])
                 if temp_tracks is None:
+                    print("### I am here ###")
                     raise ArtistNotFoundError(artist)
                 elif len(temp_tracks):
                     if self.verbose:
@@ -592,8 +601,8 @@ class Playlist_Generator:
 
     # List stuff
     def update_bad_artists(self):
-        self.failed_artists.update({artist[0]: artist[1] for artist in self.instance_fail_list})
-        self.no_song_artists.update({artist[0]: artist[1] for artist in self.instance_no_songs})
+        self.failed_artists.update(self.instance_fail_list)
+        self.no_song_artists.update(self.instance_no_songs)
         return True
 
     def add_skipped_genres(self, genres):
@@ -609,6 +618,9 @@ class Playlist_Generator:
     # File stuff
     def save_failed_artists(self):
         return write_yaml('failed_artists.yaml', self.failed_artists)
+
+    def save_no_song_artists(self):
+        return write_yaml('no_song_artists.yaml', self.no_song_artists)
 
     def make_logs(self):
         dumpfile = {'failed_artist': self.instance_fail_list,
