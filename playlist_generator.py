@@ -4,6 +4,8 @@ import spotipy as sp
 import time
 import requests
 import urllib3
+import yaml
+import pyperclip
 
 from _library.advanced_pylast import advanced_pylast_User as pl_User
 from _library.file_handler import (get_config, get_blacklist,
@@ -146,7 +148,8 @@ class Playlist_Generator:
         Lastfm_user = pl_User(Lastfm_username, self.pl_net)
         page_no = starting_page
         ret = {}
-        while len(ret.keys()) < min_artists:
+        # while len(ret.keys()) < min_artists:
+        while True:
             try:
                 top_artists = Lastfm_user.get_top_artists(limit=512, page=page_no)
                 time.sleep(self.Lastfm_sleep_time)
@@ -185,7 +188,7 @@ class Playlist_Generator:
         """
         return self.get_user_scrobbles(Lastfm_username=self.my_Lastfm_username)
 
-    def get_own_scrobbles(self, scrobble_target, min_artists=100, starting_page=1):
+    def get_own_scrobbles(self, scrobble_target, min_artists=1000, starting_page=1):
         """Fetches the 1000 top artist for the logged in user and filters out those with scrobbles over the target.
         If the result is less than min_artists, the process is repeated for the next 1000 top artists.
 
@@ -542,7 +545,13 @@ class Playlist_Generator:
                             art_print_string = " " * (8 - (len(artist[0]) + 1) % 8) + art_print_string
                         while len(art_print_string) < 32:
                             art_print_string = " " * 8 + art_print_string
-                        print(art_print_string + f" {len(temp_tracks)} of {artist[1]}")
+                        art_print_string += f" {len(temp_tracks)} of {artist[1]}"
+                        if len(temp_tracks) < 10:
+                            art_print_string += " "
+                        if artist[1] < 10:
+                            art_print_string += " "
+                        art_print_string += f"\t({tracks_added + len(temp_tracks)}/{max_entries})"
+                        print(art_print_string)
                     if len(temp_tracks) <= 10:
                         track_ids[len(temp_tracks) - 1].extend(temp_tracks)
                     else:
