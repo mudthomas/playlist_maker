@@ -34,6 +34,7 @@ class TidalService(MusicService):
         # still valid; otherwise walks through the interactive OAuth login and saves
         # the result to SESSION_FILE for next time.
         self.session.login_session_file(Path(self.SESSION_FILE))
+        self._playlist_cache = {}  # playlist_id -> tidalapi Playlist, populated by _get_playlist
 
     @staticmethod
     def _to_track(track):
@@ -76,9 +77,19 @@ class TidalService(MusicService):
             time.sleep(self.sleep_time)
         return [self._to_track(track) for track in tracks]
 
+    def _get_playlist(self, playlist_id):
+        """Returns the tidalapi Playlist for playlist_id, fetching it once and reusing
+        it for the rest of this service's lifetime - empty_playlist and add_to_playlist
+        are always called back-to-back on the same playlist_id, so this halves the
+        playlist-fetch calls for a farm_crowns/steal_crowns run.
+        """
+        if playlist_id not in self._playlist_cache:
+            self._playlist_cache[playlist_id] = self.session.playlist(playlist_id)
+        return self._playlist_cache[playlist_id]
+
     def empty_playlist(self, playlist_id):
         """Empties a TIDAL playlist of its entries."""
-        playlist = self.session.playlist(playlist_id)
+        playlist = self._get_playlist(playlist_id)
         counter = playlist.num_tracks
         playlist.clear()
         time.sleep(self.sleep_time)
@@ -91,7 +102,7 @@ class TidalService(MusicService):
         Chunked to 100 at a time, matching the pattern used for Spotify - TIDAL's API
         isn't documented as having the same hard limit, but there's no upside to risking it.
         """
-        playlist = self.session.playlist(playlist_id)
+        playlist = self._get_playlist(playlist_id)
         number_of_tracks = len(track_ids)
         tracks_added = 0
         while tracks_added < number_of_tracks:

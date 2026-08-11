@@ -40,6 +40,7 @@ class SpotifyService(MusicService):
             redirect_uri="https://127.0.0.1:8080",
             scope="playlist-modify-public"
         ), requests_session=session)
+        self._user_id = None  # lazily fetched and cached by _get_user_id - can't change during a run
 
     @staticmethod
     def _to_track(track):
@@ -94,14 +95,20 @@ class SpotifyService(MusicService):
             print(f"Removed {counter} tracks from playlist")
         return True
 
+    def _get_user_id(self):
+        if self._user_id is None:
+            self._user_id = self.spot.me()['id']
+        return self._user_id
+
     def add_to_playlist(self, track_ids, playlist_id):
         """Adds tracks to a Spotify playlist.
         Because of limitations, only a hundred tracks are added at a time.
         """
         number_of_tracks = len(track_ids)
         tracks_added = 0
+        user_id = self._get_user_id()
         while tracks_added < number_of_tracks:
-            self.spot.user_playlist_add_tracks(user=self.spot.me()['id'],
+            self.spot.user_playlist_add_tracks(user=user_id,
                                                playlist_id=playlist_id,
                                                tracks=track_ids[tracks_added:tracks_added + 100])
             time.sleep(self.sleep_time)
