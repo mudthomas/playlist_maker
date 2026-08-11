@@ -49,8 +49,8 @@ class SpotifyService(MusicService):
                     artist_name=track['artists'][0]['name'],
                     duration_ms=track['duration_ms'])
 
-    def search_artist(self, artist_name, max_retries=1):
-        for _ in range(max_retries):
+    def search_artist(self, artist_name, max_retries=3):
+        for attempt in range(max_retries):
             try:
                 search_results = self.spot.search(q=artist_name, limit=50, type='artist')
                 time.sleep(self.sleep_time)
@@ -61,6 +61,8 @@ class SpotifyService(MusicService):
             except Exception as e:
                 self.error_logger("Spotify artist search error I want to be able to handle:", True)
                 self.error_logger(e, True)
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)  # exponential backoff before retrying: 1s, 2s, 4s, ...
         raise SearchError(artist_name)
 
     def get_artist_top_tracks(self, artist_id):

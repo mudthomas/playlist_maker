@@ -21,6 +21,12 @@ from _library.music_services import get_music_service_class
 from _library.errors import GenreError, ArtistNotFoundError, NoSongsFoundError, SearchError
 
 BIG_NUMBER = 1000000  # Maybe replace this with numpy.inf or something...
+# How many SearchErrors in a row (across different artists) get_track_ids tolerates
+# before giving up on the rest of the batch - see the except SearchError handler
+# there. A single SearchError is treated as a one-off (the artist is skipped, the
+# batch continues); only a run of consecutive ones is treated as evidence the
+# service itself is struggling and worth stopping early for.
+MAX_CONSECUTIVE_SEARCH_ERRORS = 3
 
 # Friendlier prompt text for credential keys asked for interactively. Keys not
 # listed here (e.g. a future service's own extra keys) just use the raw key name.
@@ -529,6 +535,7 @@ class Playlist_Generator:
         track_ids = [[], [], [], [], [], [], [], [], [], []]
         tracks_added = no_of_old_results
         return_track_ids = []
+        consecutive_search_errors = 0
         for artist in top_artists:
             try:
                 temp_tracks = self.get_artist_track_ids(artist)
@@ -536,6 +543,7 @@ class Playlist_Generator:
                     print("### I am here ###")
                     raise ArtistNotFoundError(artist)
                 elif len(temp_tracks):
+                    consecutive_search_errors = 0
                     if self.verbose:
                         art_print_string = artist[0] + ":"
                         if len(artist[0]) < 32:
@@ -559,18 +567,26 @@ class Playlist_Generator:
                 else:
                     raise NoSongsFoundError(artist)
             except GenreError as e:
+                consecutive_search_errors = 0
                 self.add_skipped_genres(e.genres)
                 continue
             except SearchError as e:
                 print(f"Some error occurred when searching for {e.artist}")
-                break
+                consecutive_search_errors += 1
+                if consecutive_search_errors >= MAX_CONSECUTIVE_SEARCH_ERRORS:
+                    print(f"{MAX_CONSECUTIVE_SEARCH_ERRORS} search errors in a row - "
+                          "stopping early instead of hammering a struggling API.")
+                    break
+                continue
             except ArtistNotFoundError:
+                consecutive_search_errors = 0
                 if self.verbose:
                     print(f'Add {artist[0]} to failed artists')
                 self.remove_list.append(artist[0])
                 self.instance_fail_list.update({artist[0]: max(artist[1], self.instance_fail_list.get(artist[1], 0))})
                 continue
             except NoSongsFoundError:
+                consecutive_search_errors = 0
                 if self.verbose:
                     print(f"Found no songs for {artist[0]}.")
                 self.remove_list.append(artist[0])

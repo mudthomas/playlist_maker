@@ -49,8 +49,8 @@ class TidalService(MusicService):
                     artist_name=artist_name,
                     duration_ms=(track.duration or 0) * 1000)  # TIDAL reports duration in seconds
 
-    def search_artist(self, artist_name, max_retries=1):
-        for _ in range(max_retries):
+    def search_artist(self, artist_name, max_retries=3):
+        for attempt in range(max_retries):
             try:
                 search_results = self.session.search(artist_name, models=[td.Artist], limit=50)
                 time.sleep(self.sleep_time)
@@ -61,6 +61,8 @@ class TidalService(MusicService):
             except Exception as e:
                 self.error_logger("Tidal artist search error I want to be able to handle:", True)
                 self.error_logger(e, True)
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)  # exponential backoff before retrying: 1s, 2s, 4s, ...
         raise SearchError(artist_name)
 
     def get_artist_top_tracks(self, artist_id):
