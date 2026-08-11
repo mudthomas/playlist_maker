@@ -14,7 +14,7 @@ class GenreError(PlayListError):
 
 class ArtistNotFoundError(PlayListError):
     def __init__(self, artist):
-        self.message = "Artist not found on Spotify."
+        self.message = "Artist not found."
         self.artist = artist
         super().__init__(self.message)
 
@@ -29,5 +29,5 @@ class NoSongsFoundError(PlayListError):
 class SearchError(PlayListError):
     def __init__(self, artist):
         self.artist = artist
-        self.message = f"Could not complete Spotify search for artist: {self.artist}."
+        self.message = f"Could not complete search for artist: {self.artist}."
         super().__init__(self.message)

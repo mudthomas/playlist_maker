@@ -339,11 +339,11 @@ class Playlist_Generator:
             try:
                 with open('opponent_scrobbles.json', 'r', encoding='UTF-8') as opp:
                     top_artists = json.load(opp)
+                if not len(top_artists):
+                    self.add_to_error_log("Old list empty, getting new instead.", True)
+                    reuse = False
             except FileNotFoundError:
                 self.add_to_error_log("No previous opponent scrobbles found, getting new instead.", True)
-                reuse = False
-            if not len(top_artists):
-                self.add_to_error_log("Old list empty, getting new instead.", True)
                 reuse = False
         if not reuse:
             if self.verbose:
