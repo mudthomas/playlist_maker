@@ -313,7 +313,13 @@ class Playlist_Generator:
         top_artists = self.get_own_scrobbles(scrobble_target, self.farming_settings['starting_page'])
         skip_artists = self._get_skip_artists()
         top_artists = [[key, scrobble_target - value] for key, value in top_artists.items() if key not in skip_artists]
-        track_ids = self.get_track_ids(top_artists, self.farming_settings['playlist_length'])
+        try:
+            track_ids = self.get_track_ids(top_artists, self.farming_settings['playlist_length'])
+        finally:
+            self.update_bad_artists()
+            self.save_local_artist_info()
+            self.save_failed_artists()
+            self.save_no_song_artists()
         self.service.empty_playlist(self.farming_playlist)
         self.service.add_to_playlist(track_ids, self.farming_playlist)
         self.farming_settings['last_run'] = int(time.strftime('%j'))
@@ -380,7 +386,13 @@ class Playlist_Generator:
                     self.remove_list.append(artist)
 
         top_artists_list.sort(key=lambda x: x[1])
-        track_ids = self.get_track_ids(top_artists_list, number_of_tracks)
+        try:
+            track_ids = self.get_track_ids(top_artists_list, number_of_tracks)
+        finally:
+            self.update_bad_artists()
+            self.save_local_artist_info()
+            self.save_failed_artists()
+            self.save_no_song_artists()
 
         self.service.empty_playlist(self.stealing_playlist)
         self.service.add_to_playlist(track_ids, self.stealing_playlist)
@@ -614,9 +626,6 @@ class Playlist_Generator:
         return True
 
     def do_exit_stuff(self):
-        self.update_bad_artists()
-        self.save_failed_artists()
-        self.save_local_artist_info()
         self.make_logs()
         self.save_settings()
         return True
