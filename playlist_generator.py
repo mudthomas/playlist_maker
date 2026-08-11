@@ -361,30 +361,20 @@ class Playlist_Generator:
 
         my_top_artists = self.get_own_full_dict()
 
-        lim_multiplier = 1
-        track_ids = []
-        while True:
-            top_artists_list = []
-            for artist, scrobbles in top_artists.items():
-                if scrobbles >= scrobble_target:
-                    my_scrobble = my_top_artists.get(artist, 0)
-                    if self.stealing_settings['overtake'] and not my_scrobble:
-                        continue
-                    scrobbles -= my_scrobble
-                    if 0 <= scrobbles:
-                        top_artists_list.append([artist, scrobbles + 1])
-                    else:
-                        self.remove_list.append(artist)
+        top_artists_list = []
+        for artist, scrobbles in top_artists.items():
+            if scrobbles >= scrobble_target:
+                my_scrobble = my_top_artists.get(artist, 0)
+                if self.stealing_settings['overtake'] and not my_scrobble:
+                    continue
+                scrobbles -= my_scrobble
+                if 0 <= scrobbles:
+                    top_artists_list.append([artist, scrobbles + 1])
+                else:
+                    self.remove_list.append(artist)
 
-            top_artists_list.sort(key=lambda x: x[1])
-            temp_track_ids = self.get_track_ids(top_artists_list, number_of_tracks, len(track_ids))
-            if len(temp_track_ids):
-                track_ids.extend(temp_track_ids)
-                if len(track_ids) >= number_of_tracks:
-                    break
-            else:
-                break
-            lim_multiplier += 1
+        top_artists_list.sort(key=lambda x: x[1])
+        track_ids = self.get_track_ids(top_artists_list, number_of_tracks)
 
         self.service.empty_playlist(self.stealing_playlist)
         self.service.add_to_playlist(track_ids, self.stealing_playlist)
