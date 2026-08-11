@@ -396,17 +396,6 @@ class Playlist_Generator:
 
     def clean_string(self, input_string):
         string_to_clean = input_string.lower()
-        # if len(string_to_clean) > 4:
-        #     if string_to_clean[0:4] == 'the ':
-        #         string_to_clean = string_to_clean[4:]
-        # while True:
-        #     for i in range(len(string_to_clean)):
-        #         if string_to_clean[i] == '&':
-        #             string_to_clean = string_to_clean[:i] + "and" + string_to_clean[i + 1:]
-        #             break
-        #     else:
-        #         break
-        # string_to_clean = ''.join(e for e in string_to_clean if e.isalnum())
         return string_to_clean
 
     def check_genres(self, artist_genres):
@@ -543,15 +532,6 @@ class Playlist_Generator:
         for artist in top_artists:
             try:
                 temp_tracks = self.get_artist_track_ids(artist)
-                # if temp_tracks is None:
-                #     if artist[0][:4].lower() == "the ":                                 # Remove 'the '
-                #         temp_tracks = self.get_artist_track_ids([artist[0][4:], artist[1]])
-                #     elif artist[0][:4].lower() != "the ":                                 # Add 'the '
-                #         temp_tracks = self.get_artist_track_ids(["the " + artist[0], artist[1]])
-                # if temp_tracks is None:
-                #     temp_tracks = self.get_artist_track_ids([artist[0].lower(), artist[1]])
-                # if temp_tracks is None:
-                #     temp_tracks = self.get_artist_track_ids([artist[0].upper(), artist[1]])
                 if temp_tracks is None:
                     print("### I am here ###")
                     raise ArtistNotFoundError(artist)
