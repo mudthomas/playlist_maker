@@ -50,7 +50,7 @@ def get_config():
             general.setdefault('own_scrobbles_cache_hours', 8)
             if 'sleep_time_Spotify' in general and 'sleep_time_music_service' not in general:
                 general['sleep_time_music_service'] = general.pop('sleep_time_Spotify')
-            general.setdefault('sleep_time_music_service', 0)
+            general.setdefault('sleep_time_music_service', 2)
             verify_config(settings)
     except FileNotFoundError:
         settings = generate_settings()
@@ -109,8 +109,8 @@ def save_no_song_artists(no_song_artists, music_service=DEFAULT_MUSIC_SERVICE):
 
 def generate_settings():
     settings = {'general_settings': {'verbose': 1,
-                                     'sleep_time_music_service': 0,
-                                     'sleep_time_Lastfm': 0,
+                                     'sleep_time_music_service': 2,
+                                     'sleep_time_Lastfm': 2,
                                      'genres': [],
                                      'genre_source': None,
                                      'music_service': DEFAULT_MUSIC_SERVICE,
@@ -119,14 +119,14 @@ def generate_settings():
                 'farming_settings': {'active': 1,
                                      'crown_goal': 30,
                                      'last_run': 0,
-                                     'playlist_length': 500,
+                                     'playlist_length': 100,
                                      'starting_page': 1},
                 'stealing_settings': {'active': 1,
                                       'crown_goal': 30,
                                       'last_opponent_save': 0,
                                       'last_run': 0,
                                       'overtake': 0,
-                                      'playlist_length': 500,
+                                      'playlist_length': 100,
                                       'reuse': 7,
                                       'saved_opponent_goal': 30}}
     return settings
