@@ -1,3 +1,4 @@
+import bisect
 import json
 import pylast as pl
 import time
@@ -132,32 +133,22 @@ class Playlist_Generator:
             {artist: scrobbles}: A dictionary with artist as keys and number of plays needed to reach target as values.
         """
         def find_first_entry_under_limit(group, limit):
-            index = len(group) // 2
-            divider = 4
-            while True:
-                if limit > int(group[index].weight):
-                    if limit > int(group[index - 1].weight):
-                        index -= len(group) // divider
-                    else:
-                        break
-                else:
-                    index += len(group) // divider
-                divider *= 2
-            return index
+            """First index in `group` (sorted by descending .weight) whose weight is
+            under `limit` - the boundary between the 'weight >= limit' and
+            'weight < limit' runs. O(log n) via bisect and never reads out of range,
+            unlike the hand-rolled step search this replaces (which could stall
+            forever once its fixed jump schedule rounded down to a zero-length step
+            before finding the boundary - reproducibly common for
+            find_last_entry_over_limit below, rarer but still possible here).
+            """
+            return bisect.bisect_right(group, -limit, key=lambda a: -int(a.weight))
 
         def find_last_entry_over_limit(group, limit):
-            index = len(group) // 2
-            divider = 4
-            while True:
-                if int(group[index].weight) >= limit:
-                    if int(group[index + 1].weight) >= limit:
-                        index += len(group) // divider
-                    else:
-                        break
-                else:
-                    index -= len(group) // divider
-                divider *= 2
-            return index
+            """Last index in `group` (sorted by descending .weight) whose weight is
+            still >= limit - one before the same boundary found by
+            find_first_entry_under_limit.
+            """
+            return bisect.bisect_right(group, -limit, key=lambda a: -int(a.weight)) - 1
 
         Lastfm_user = pl_User(Lastfm_username, self.pl_net)
         page_no = starting_page
@@ -187,7 +178,10 @@ class Playlist_Generator:
                             ret.update({a.item.get_name(): int(a.weight) for a in top_artists[bottom_index:]})
                             page_no += 1
                         else:
-                            top_index = find_last_entry_over_limit(top_artists, min_scrobbles)
+                            # find_last_entry_over_limit returns the last INCLUSIVE index
+                            # over the limit, but the slice below needs an exclusive end -
+                            # +1 here keeps that artist in the result instead of dropping it.
+                            top_index = find_last_entry_over_limit(top_artists, min_scrobbles) + 1
                             ret.update({a.item.get_name(): int(a.weight) for a in top_artists[bottom_index:top_index]})
                             break
                 else:
