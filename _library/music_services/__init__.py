@@ -15,6 +15,15 @@ MUSIC_SERVICES = {
     'Spotify': SpotifyService,
 }
 
+try:
+    from .tidal_service import TidalService
+    MUSIC_SERVICES['Tidal'] = TidalService
+except ImportError:
+    # tidalapi (or one of its own dependencies, e.g. mpegdash/pyaes/ratelimit) isn't
+    # installed. Tidal just won't be a valid music_service choice until
+    # `pip install tidalapi` succeeds - everything else keeps working normally.
+    pass
+
 DEFAULT_MUSIC_SERVICE = 'Spotify'
 
 

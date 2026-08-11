@@ -1,5 +1,5 @@
 # Crown claimer
-A playlist generator using the APIs of Spotify and last.fm.
+A playlist generator using the APIs of last.fm, and either Spotify or Tidal.
 
 ## Background
 Discord is a communications platform where people with similar intrests meet on servers. Some of these servers make use of different bots for fun or utility.
@@ -15,13 +15,13 @@ Of course, cheating is not an option. So instead of just scrobbling songs in ord
 ## The code
 
 This little Python script uses the last.fm API to find a users most played artists with less than 30 plays.
-Then the Spotify API is used to find the top songs of those artist and adds them to a playlist.
+Then the chosen music service's API is used to find the top songs of those artist and adds them to a playlist.
 
 A playlist is also generated to overtake the last.fm users in 'opponent_list.txt'. This file should have one username per line.
 
 I have also added functionality to increase own plays to specific targets. I did this in order to push certain artists off of my top 100.
 
-### NOTE: User passwords and API keys are stored as plain text in auth.json. If you do not like this, there is a possibility to not save credentials after the session. I have no idea if this can be read from memory by some other malicious program.
+### NOTE: Credentials are stored as plain text, split per service: `auth_lastfm.json` for your last.fm login, plus `auth_spotify.json` and/or `auth_tidal.json` for whichever music service(s) you've used. If you do not like this, there is a possibility to not save credentials after the session. I have no idea if this can be read from memory by some other malicious program.
 
 ### NOTE: The config.yaml is automatically modified by the code. IF you make any manual changes while the code is running, they will be overwritten.
 
@@ -30,6 +30,21 @@ For API accounts for last.fm and Spotify, see the following links:
 * Spotify: https://developer.spotify.com/documentation/web-api
 
 Also a 'blacklist_artists.txt' can be added with one artist per line. These artists will not be added to playlists.
+
+## Choosing a music service
+
+By default the script uses Spotify. To use Tidal instead, set `music_service: Tidal` under `general_settings` in `config.yaml`, and install the extra dependency it needs:
+
+    pip install tidalapi
+
+If that install fails with a build error on `pyaes` or `ratelimit`, install an older setuptools first and try again:
+
+    pip install "setuptools<66"
+    pip install tidalapi
+
+Unlike Spotify, Tidal doesn't need a client id/secret - no developer account required. The first time you run the script with `music_service: Tidal`, it will print a short login link; open it, log in with your regular Tidal account, and the resulting session is cached to `tidal_session.json` and reused automatically on later runs.
+
+Either way, `FARMING_PLAYLIST_ID` and `STEALING_PLAYLIST_ID` still need to be existing, public playlists you own on whichever service you pick.
 
 ## The issues
 

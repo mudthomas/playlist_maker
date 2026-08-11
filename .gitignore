@@ -1,4 +1,6 @@
 auth.json
+auth_*.json
+*_session.json
 opponent_list.txt
 blacklist_artists.txt
 opponent_scrobbles.json
