@@ -14,7 +14,8 @@ from _library.file_handler import (get_config, get_blacklist,
                                    get_lastfm_credentials, save_lastfm_credentials,
                                    get_service_credentials, save_service_credentials,
                                    migrate_legacy_auth_json, write_yaml,
-                                   append_string_to_txt)
+                                   append_string_to_txt,
+                                   get_own_scrobbles_cache, save_own_scrobbles_cache)
 from _library.music_services import get_music_service_class
 from _library.errors import GenreError, ArtistNotFoundError, NoSongsFoundError, SearchError
 
@@ -42,6 +43,12 @@ class Playlist_Generator:
         self.music_service_name = self.general_settings['music_service']
         self.service_sleep_time = self.general_settings['sleep_time_music_service']
         self.Lastfm_sleep_time = self.general_settings['sleep_time_Lastfm']
+        self.own_scrobbles_cache_hours = self.general_settings['own_scrobbles_cache_hours']
+        # In-memory cache for get_own_full_dict/get_own_scrobbles - see
+        # _load_fresh_own_scrobbles_cache. Populated on first use by whichever of the
+        # two is called first, regardless of whether farm_crowns or steal_crowns runs
+        # first, so a single process never crawls its own last.fm library twice.
+        self._own_scrobbles_full = None
         self.instance_fail_list, self.instance_no_songs = {}, {}
         self.skipped_genres = {}
         self.saved_artists = get_saved_artists(self.music_service_name)
@@ -187,17 +194,53 @@ class Playlist_Generator:
                     break
         return ret
 
+    def _load_fresh_own_scrobbles_cache(self):
+        """Returns the full {artist: scrobbles} snapshot for this account if one is
+        already in memory (populated earlier this run) or on disk and still younger
+        than general_settings.own_scrobbles_cache_hours, else None.
+
+        Deliberately read-only: it never fetches from last.fm itself, so it can be
+        used opportunistically by get_own_scrobbles without forcing a full crawl
+        when nothing fresh is available yet.
+        """
+        if self._own_scrobbles_full is not None:
+            return self._own_scrobbles_full
+        cached = get_own_scrobbles_cache()
+        if cached is None:
+            return None
+        age_hours = (time.time() - cached['timestamp']) / 3600
+        if age_hours >= self.own_scrobbles_cache_hours:
+            return None
+        self._own_scrobbles_full = cached['data']
+        return self._own_scrobbles_full
+
     def get_own_full_dict(self):
         """Fetches all top artist for the logged in user.
+
+        Reuses a cached snapshot (own_scrobbles_cache.json, from this or an earlier
+        run) if it's younger than general_settings.own_scrobbles_cache_hours, instead
+        of re-crawling all of last.fm - get_own_scrobbles reads the same cache, so
+        whichever of the two runs first in a given process does the one full fetch
+        and the other reuses it for free.
 
         Returns:
             {artist: scrobbles}: A dictionary with artist as keys and scrobbles as values.
         """
-        return self.get_user_scrobbles(Lastfm_username=self.my_Lastfm_username)
+        cached = self._load_fresh_own_scrobbles_cache()
+        if cached is not None:
+            return cached
+        data = self.get_user_scrobbles(Lastfm_username=self.my_Lastfm_username)
+        self._own_scrobbles_full = data
+        save_own_scrobbles_cache(int(time.time()), data)
+        return data
 
     def get_own_scrobbles(self, scrobble_target, min_artists=1000, starting_page=1):
         """Fetches the 1000 top artist for the logged in user and filters out those with scrobbles over the target.
         If the result is less than min_artists, the process is repeated for the next 1000 top artists.
+
+        If a fresh full-library snapshot is already available (see get_own_full_dict),
+        it's filtered locally instead of hitting last.fm again; otherwise this falls
+        back to its own bounded fetch exactly as before.
 
         Args:
             scrobble_target (int): Number of scrobbles that should be reached.
@@ -207,6 +250,9 @@ class Playlist_Generator:
         Returns:
             {artist: scrobbles}: A dictionary with artist as keys and number of plays needed to reach target as values.
         """
+        cached = self._load_fresh_own_scrobbles_cache()
+        if cached is not None:
+            return {artist: plays for artist, plays in cached.items() if plays < scrobble_target}
         return self.get_user_scrobbles(Lastfm_username=self.my_Lastfm_username,
                                        max_scrobbles=scrobble_target,
                                        min_artists=min_artists,

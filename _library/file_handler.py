@@ -47,6 +47,7 @@ def get_config():
             general = settings['general_settings']
             general.setdefault('genre_source', None)
             general.setdefault('music_service', DEFAULT_MUSIC_SERVICE)
+            general.setdefault('own_scrobbles_cache_hours', 8)
             if 'sleep_time_Spotify' in general and 'sleep_time_music_service' not in general:
                 general['sleep_time_music_service'] = general.pop('sleep_time_Spotify')
             general.setdefault('sleep_time_music_service', 0)
@@ -113,6 +114,7 @@ def generate_settings():
                                      'genres': [],
                                      'genre_source': None,
                                      'music_service': DEFAULT_MUSIC_SERVICE,
+                                     'own_scrobbles_cache_hours': 8,
                                      'popular': 1},
                 'farming_settings': {'active': 1,
                                      'crown_goal': 30,
@@ -184,6 +186,24 @@ def write_json(filename, dumpfile):
     with open(filename, 'w') as json_file:
         json.dump(dumpfile, json_file)
     return True
+
+
+# Own-scrobbles cache
+# A snapshot of the logged-in last.fm user's full top-artists dict, shared by
+# Playlist_Generator.get_own_full_dict (steal_crowns) and get_own_scrobbles
+# (farm_crowns) so a full last.fm crawl isn't repeated needlessly - see
+# general_settings.own_scrobbles_cache_hours for the freshness window. Not
+# nested by music_service: this is pure last.fm data, independent of which
+# music_service is active.
+def get_own_scrobbles_cache():
+    """Returns the cached {'timestamp': <unix seconds>, 'data': {artist: scrobbles}}
+    snapshot, or None if there isn't one yet.
+    """
+    return _read_json_or_none('own_scrobbles_cache.json')
+
+
+def save_own_scrobbles_cache(timestamp, data):
+    return write_json('own_scrobbles_cache.json', {'timestamp': timestamp, 'data': data})
 
 
 # Credentials

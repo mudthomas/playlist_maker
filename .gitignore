@@ -4,6 +4,7 @@ auth_*.json
 opponent_list.txt
 blacklist_artists.txt
 opponent_scrobbles.json
+own_scrobbles_cache.json
 make_executable.py
 *.bkup
 *.spec
