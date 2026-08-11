@@ -289,6 +289,16 @@ class Playlist_Generator:
     # End LastFM stuff
 
     # Playlist stuff
+    def _get_skip_artists(self):
+        """Returns the set of artist names that should never be added to a playlist:
+        the user's blacklist, plus artists already known (from a previous run) to
+        fail search or have no matching songs on the active music service.
+
+        A set rather than a list so `artist not in skip_artists` (farm_crowns) is
+        O(1) instead of an O(n) scan per artist.
+        """
+        return set(self.blacklist_artists) | self.failed_artists.keys() | self.no_song_artists.keys()
+
     def farm_crowns(self):
         """Populates the 'Farming playlist' with enough plays to reach target for each artist.
         The number of songs per artists are also limited to their top tracks on the active music service.
@@ -301,9 +311,7 @@ class Playlist_Generator:
         if self.verbose:
             print("\n## Generating list for farming own crowns ##")
         top_artists = self.get_own_scrobbles(scrobble_target, self.farming_settings['starting_page'])
-        skip_artists = [a for a in self.blacklist_artists]
-        skip_artists += [a for a in self.failed_artists.keys()]
-        skip_artists += [a for a in self.no_song_artists.keys()]
+        skip_artists = self._get_skip_artists()
         top_artists = [[key, scrobble_target - value] for key, value in top_artists.items() if key not in skip_artists]
         track_ids = self.get_track_ids(top_artists, self.farming_settings['playlist_length'])
         self.service.empty_playlist(self.farming_playlist)
@@ -351,14 +359,9 @@ class Playlist_Generator:
                     top_artists.update({artist: max(scrobbles, top_artists.get(artist, 0))})
             if self.verbose:
                 print("All opponents fetched.")
-            skip_artists = [a for a in self.blacklist_artists]
-            skip_artists += [a for a in self.failed_artists.keys()]
-            skip_artists += [a for a in self.no_song_artists.keys()]
+            skip_artists = self._get_skip_artists()
             for artist in skip_artists:
-                try:
-                    top_artists.pop(artist)
-                except KeyError:
-                    continue
+                top_artists.pop(artist, None)
             with open('opponent_scrobbles.json', 'w', encoding='UTF-8') as opp:
                 json.dump(top_artists, opp)
 
