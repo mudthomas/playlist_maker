@@ -1,21 +1,33 @@
 import json
 import pylast as pl
-import spotipy as sp
 import time
-import requests
-import urllib3
 import yaml
 import pyperclip
 
 from _library.advanced_pylast import advanced_pylast_User as pl_User
 from _library.file_handler import (get_config, get_blacklist,
-                                   get_opponent_list, write_yaml,
+                                   get_opponent_list,
                                    get_saved_artists, save_artist_info,
                                    get_failed_artists, get_no_song_artists,
+                                   save_failed_artists as save_failed_artists_to_file,
+                                   save_no_song_artists as save_no_song_artists_to_file,
+                                   get_lastfm_credentials, save_lastfm_credentials,
+                                   get_service_credentials, save_service_credentials,
+                                   migrate_legacy_auth_json, write_yaml,
                                    append_string_to_txt)
+from _library.music_services import get_music_service_class
 from _library.errors import GenreError, ArtistNotFoundError, NoSongsFoundError, SearchError
 
 BIG_NUMBER = 1000000  # Maybe replace this with numpy.inf or something...
+
+# Friendlier prompt text for credential keys asked for interactively. Keys not
+# listed here (e.g. a future service's own extra keys) just use the raw key name.
+_CREDENTIAL_PROMPT_HINTS = {
+    'FARMING_PLAYLIST_ID': 'Farming playlist id (must be public)',
+    'STEALING_PLAYLIST_ID': 'Stealing playlist id (must be public)',
+    'CLIENT_ID': 'client id',
+    'CLIENT_SECRET': 'client secret',
+}
 
 
 class Playlist_Generator:
@@ -27,81 +39,75 @@ class Playlist_Generator:
         self.genres = self.general_settings['genres']
         self.genre_source = self.general_settings['genre_source']
         self.popular = self.general_settings['popular']
-        self.Spotify_sleep_time = self.general_settings['sleep_time_Spotify']
+        self.music_service_name = self.general_settings['music_service']
+        self.service_sleep_time = self.general_settings['sleep_time_music_service']
         self.Lastfm_sleep_time = self.general_settings['sleep_time_Lastfm']
         self.instance_fail_list, self.instance_no_songs = {}, {}
         self.skipped_genres = {}
-        self.saved_artists = get_saved_artists()
-        self.failed_artists = get_failed_artists()
-        self.no_song_artists = get_no_song_artists()
+        self.saved_artists = get_saved_artists(self.music_service_name)
+        self.failed_artists = get_failed_artists(self.music_service_name)
+        self.no_song_artists = get_no_song_artists(self.music_service_name)
         self.remove_list = []
 
-        try:
-            with open('auth.json', 'r', encoding='UTF-8') as auth:
-                credentials = json.load(auth)
-        except FileNotFoundError:
-            self.add_to_error_log("No auth.json found.", True)
-            print("If you generate an auth.json your credentials will be saved in plain text.")
+        # Splits a pre-multi-service auth.json into auth_lastfm.json/auth_<service>.json
+        # the first time this runs after upgrading. No-op if auth.json doesn't exist.
+        migrate_legacy_auth_json()
+
+        service_class = get_music_service_class(self.music_service_name)
+        required_keys = service_class.required_credential_keys()
+
+        lastfm_credentials = get_lastfm_credentials()
+        service_credentials = get_service_credentials(self.music_service_name)
+
+        if lastfm_credentials is None or service_credentials is None:
+            missing = []
+            if lastfm_credentials is None:
+                missing.append("last.fm")
+            if service_credentials is None:
+                missing.append(self.music_service_name)
+            self.add_to_error_log(f"No credentials found for: {', '.join(missing)}.", True)
+            print("If you generate credential files your details will be saved in plain text.")
             print("It is possible to run the script without saving your credentials,")
             print("but they will still be in active memory.")
             print("I do not feel confident to say whether or not credentials cannot be extracted from memory.")
             print("I have no interest to construct a workaround for that at this point in time.")
             print("Use at own risk.")
             while True:
-                generate_flag = input("Generate auth.json? Otherwise credentials will not be stored. (y/n): ")
+                generate_flag = input("Generate credential file(s)? Otherwise credentials will not be stored. (y/n): ")
                 if generate_flag in ['Y', 'y']:
                     print("\nCredentials will be saved.\n")
                     break
                 elif generate_flag in ['N', 'n']:
                     print("\nCredentials will NOT be saved.\n")
                     break
-            credentials = {'LASTFM_API_KEY': input("last.fm API key: "),
-                           'LASTFM_API_SECRET': input("last.fm API secret: "),
-                           'LASTFM_USERNAME': input("last.fm API username: "),
-                           'LASTFM_PASSWORD': input("last.fm API password: "),
-                           'SPOTIFY_CLIENT_ID': input("Spotify client id: "),
-                           'SPOTIFY_CLIENT_SECRET': input("Spotify client secret: "),
-                           'FARMING_PLAYLIST_ID': input("Spotify Farming playlist id (must be public): "),
-                           'STEALING_PLAYLIST_ID': input("Spotify Stealing playlist id (must be public): ")}
-            if generate_flag in ['Y', 'y']:
-                with open('auth.json', 'w', encoding='UTF-8') as auth:
-                    json.dump(credentials, auth)
-        self.my_Lastfm_username = credentials['LASTFM_USERNAME']
-        self.farming_playlist = credentials['FARMING_PLAYLIST_ID']
-        self.stealing_playlist = credentials['STEALING_PLAYLIST_ID']
-        self.pl_net = pl.LastFMNetwork(api_key=credentials['LASTFM_API_KEY'],
-                                       api_secret=credentials['LASTFM_API_SECRET'],
+            if lastfm_credentials is None:
+                lastfm_credentials = {'LASTFM_API_KEY': input("last.fm API key: "),
+                                      'LASTFM_API_SECRET': input("last.fm API secret: "),
+                                      'LASTFM_USERNAME': input("last.fm API username: "),
+                                      'LASTFM_PASSWORD': input("last.fm API password: ")}
+                if generate_flag in ['Y', 'y']:
+                    save_lastfm_credentials(lastfm_credentials)
+            if service_credentials is None:
+                service_credentials = {
+                    key: input(f"{self.music_service_name} {_CREDENTIAL_PROMPT_HINTS.get(key, key)}: ")
+                    for key in required_keys
+                }
+                if generate_flag in ['Y', 'y']:
+                    save_service_credentials(self.music_service_name, service_credentials)
+
+        self.my_Lastfm_username = lastfm_credentials['LASTFM_USERNAME']
+        self.pl_net = pl.LastFMNetwork(api_key=lastfm_credentials['LASTFM_API_KEY'],
+                                       api_secret=lastfm_credentials['LASTFM_API_SECRET'],
                                        username=self.my_Lastfm_username,
-                                       password_hash=pl.md5(credentials['LASTFM_PASSWORD']))
-        new_way = True
-        if new_way:
-            session = requests.Session()
-            retry = urllib3.Retry(
-                total=0,
-                connect=None,
-                read=0,
-                allowed_methods=frozenset(['GET', 'POST', 'PUT', 'DELETE']),
-                status=0,
-                backoff_factor=0.3,
-                status_forcelist=(429, 500, 502, 503, 504),
-                respect_retry_after_header=False  # <---
-            )
-            adapter = requests.adapters.HTTPAdapter(max_retries=retry)
-            session.mount('http://', adapter)
-            session.mount('https://', adapter)
-            self.spot = sp.Spotify(auth_manager=sp.oauth2.SpotifyOAuth(
-                client_id=credentials['SPOTIFY_CLIENT_ID'],
-                client_secret=credentials['SPOTIFY_CLIENT_SECRET'],
-                redirect_uri="https://127.0.0.1:8080",
-                scope="playlist-modify-public"
-            ), requests_session=session)
-        else:
-            self.spot = sp.Spotify(auth_manager=sp.oauth2.SpotifyOAuth(
-                client_id=credentials['SPOTIFY_CLIENT_ID'],
-                client_secret=credentials['SPOTIFY_CLIENT_SECRET'],
-                redirect_uri="https://127.0.0.1:8080",
-                scope="playlist-modify-public")
-            )
+                                       password_hash=pl.md5(lastfm_credentials['LASTFM_PASSWORD']))
+
+        self.farming_playlist = service_credentials['FARMING_PLAYLIST_ID']
+        self.stealing_playlist = service_credentials['STEALING_PLAYLIST_ID']
+        self.service = service_class(service_credentials,
+                                     sleep_time=self.service_sleep_time,
+                                     verbose=self.verbose,
+                                     error_logger=self.add_to_error_log)
+
         self.blacklist_artists = get_blacklist()
         self.opponent_list = get_opponent_list()
 
@@ -236,79 +242,10 @@ class Playlist_Generator:
         return [tag.item.get_name() for tag in top_tags]
     # End LastFM stuff
 
-    # Spotify Things, Playlists
-    def empty_playlist(self, playlist_id):
-        """Empties a Spotify playlist of its entries.
-        Because of limitations, only a hundred tracks are removed at a time.
-
-        Args:
-            playlist_id (str): The id of the playlist to be cleared.
-        """
-        tracks = self.spot.playlist_items(playlist_id)["items"]
-        time.sleep(self.Spotify_sleep_time)
-        counter = len(tracks)
-        while len(tracks):
-            self.spot.playlist_remove_all_occurrences_of_items(playlist_id, [track["track"]["uri"] for track in tracks])
-            time.sleep(self.Spotify_sleep_time)
-            tracks = self.spot.playlist_items(playlist_id)["items"]
-            time.sleep(self.Spotify_sleep_time)
-            counter += len(tracks)
-        if self.verbose:
-            print(f"Removed {counter} tracks from playlist")
-        return True
-
-    def add_to_playlist(self, track_ids, playlist_id):
-        """Adds tracks to a Spotify playlist.
-        Because of limitations, only a hundred tracks are added at a time.
-
-        Args:
-            track_ids ([str]): A list of Spotify track ids
-            playlist_id (str): A Spotify playlist id
-        """
-        number_of_tracks = len(track_ids)
-        tracks_added = 0
-        while tracks_added < number_of_tracks:
-            self.spot.user_playlist_add_tracks(user=self.spot.me()['id'],
-                                               playlist_id=playlist_id,
-                                               tracks=track_ids[tracks_added:tracks_added + 100])
-            time.sleep(self.Spotify_sleep_time)
-            tracks_added += 100
-        if self.verbose:
-            print(f"Added {number_of_tracks} tracks to playlist")
-        return True
-    # End Spotify Things, Playlists
-
-    # Spotify Things
-    def get_all_artist_tracks(self, artist_uri):
-        album_uris = [a['uri'] for a in self.spot.artist_albums(artist_uri)['items']]
-        time.sleep(self.Spotify_sleep_time)
-        tracks = []
-        for uri in album_uris:
-            tracks.extend(self.spot.album_tracks(uri)['items'])
-            time.sleep(self.Spotify_sleep_time)
-        return tracks
-
-    def get_artist_popular_tracks(self, artist_uri):
-        tracks = self.spot.artist_top_tracks(artist_uri)["tracks"]
-        time.sleep(self.Spotify_sleep_time)
-        return tracks
-
-    def search_artist(self, artist_name, max_retries=1):
-        for i in range(max_retries):
-            try:
-                search_results = self.spot.search(q=artist_name, limit=50, type='artist')
-                time.sleep(self.Spotify_sleep_time)
-                return search_results["artists"]["items"]
-            except KeyboardInterrupt:
-                raise KeyboardInterrupt
-            except Exception as e:
-                self.add_to_error_log("Spotify artist search error I want to be able to handle:", True)
-                self.add_to_error_log(e, True)
-        raise SearchError(artist_name)
-
+    # Playlist stuff
     def farm_crowns(self):
         """Populates the 'Farming playlist' with enough plays to reach target for each artist.
-        The number of songs per artists are also limited to their Spotify top tracks.
+        The number of songs per artists are also limited to their top tracks on the active music service.
 
         Args:
             scrobble_target (int, optional): The target number of scrobbles per artist. Defaults to 30.
@@ -323,15 +260,15 @@ class Playlist_Generator:
         skip_artists += [a for a in self.no_song_artists.keys()]
         top_artists = [[key, scrobble_target - value] for key, value in top_artists.items() if key not in skip_artists]
         track_ids = self.get_track_ids(top_artists, self.farming_settings['playlist_length'])
-        self.empty_playlist(self.farming_playlist)
-        self.add_to_playlist(track_ids, self.farming_playlist)
+        self.service.empty_playlist(self.farming_playlist)
+        self.service.add_to_playlist(track_ids, self.farming_playlist)
         self.farming_settings['last_run'] = int(time.strftime('%j'))
         self.do_exit_stuff()
         return True
 
     def steal_crowns(self):
         """Populates the 'Stealing playlist' with enough plays to overtake opponents.
-        The number of songs per artists are also limited to their Spotify top tracks.
+        The number of songs per artists are also limited to their top tracks on the active music service.
 
         Args:
             scrobble_target (int, optional): Lower scrobble limit of opponent entries to target. Defaults to 30.
@@ -406,8 +343,8 @@ class Playlist_Generator:
                 break
             lim_multiplier += 1
 
-        self.empty_playlist(self.stealing_playlist)
-        self.add_to_playlist(track_ids, self.stealing_playlist)
+        self.service.empty_playlist(self.stealing_playlist)
+        self.service.add_to_playlist(track_ids, self.stealing_playlist)
         if len(self.remove_list):
             for artist in self.remove_list:
                 try:
@@ -422,6 +359,7 @@ class Playlist_Generator:
         self.stealing_settings['last_run'] = int(time.strftime('%j'))
         self.do_exit_stuff()
         return True
+    # End Playlist stuff
 
     def clean_string(self, input_string):
         string_to_clean = input_string.lower()
@@ -458,6 +396,10 @@ class Playlist_Generator:
         placeholder is filled in here if it's genuinely empty. LastFM tags require a dedicated API
         call, made only the first time an artist is looked up under that source.
 
+        Note this always reads/writes 'genres_spotify' regardless of which music_service is active -
+        that field is only meaningful when music_service is also 'Spotify', since genre tags come
+        along with whichever service's artist search is actually being used.
+
         Args:
             artist_name (str): The artist's key in self.saved_artists.
             saved_artist (dict): That artist's saved_artists entry.
@@ -477,7 +419,7 @@ class Playlist_Generator:
 
     def filter_tracks(self, artist_name, tracks):
         artist_name = self.clean_string(artist_name)
-        return [track for track in tracks if self.clean_string(track['artists'][0]['name']) == artist_name]
+        return [track for track in tracks if self.clean_string(track.artist_name) == artist_name]
 
     def get_artist_track_ids(self, artist):
         try:
@@ -492,8 +434,8 @@ class Playlist_Generator:
                         search_name = saved_artist['search_name']
                     except KeyError:
                         search_name = artist[0]
-                    tracks = self.filter_tracks(search_name, self.get_artist_popular_tracks(saved_artist["uri"]))
-                    saved_artist['popular'] = [track['uri'] for track in tracks]
+                    tracks = self.filter_tracks(search_name, self.service.get_artist_top_tracks(saved_artist["uri"]))
+                    saved_artist['popular'] = [track.id for track in tracks]
                     self.saved_artists.update({artist[0]: saved_artist})
                 return saved_artist['popular'][:artist[1]]
             else:
@@ -502,11 +444,10 @@ class Playlist_Generator:
                         search_name = saved_artist['search_name']
                     except KeyError:
                         search_name = artist[0]
-                    tracks = self.filter_tracks(search_name, self.get_all_artist_tracks(saved_artist["uri"]))
-                    tracks = {track['name']: track for track in tracks}
-                    tracks = [[track['uri'], track['duration_ms']] for track in tracks.values()]
-                    tracks.sort(key=lambda x: x[1])
-                    saved_artist['full'] = [track[0] for track in tracks]
+                    tracks = self.filter_tracks(search_name, self.service.get_artist_all_tracks(saved_artist["uri"]))
+                    tracks = {track.name: track for track in tracks}
+                    sorted_tracks = sorted(tracks.values(), key=lambda t: t.duration_ms)
+                    saved_artist['full'] = [track.id for track in sorted_tracks]
                     self.saved_artists.update({artist[0]: saved_artist})
                 return saved_artist['full'][:artist[1]]
         except KeyError:
@@ -518,13 +459,13 @@ class Playlist_Generator:
             for search_name_method in search_name_methods:
                 try:
                     search_name = search_name_method(artist[0])
-                    search_results = self.search_artist(search_name)
-                    for i in range(len(search_results)):
-                        if self.clean_string(search_results[i]['name']) == self.clean_string(search_name):
+                    search_results = self.service.search_artist(search_name)
+                    for result in search_results:
+                        if self.clean_string(result.name) == self.clean_string(search_name):
                             artist_dict = {'full': [],
                                            'popular': [],
-                                           'uri': search_results[i]["uri"],
-                                           'genres_spotify': search_results[i]['genres'],
+                                           'uri': result.id,
+                                           'genres_spotify': result.genres,
                                            'genres_lastfm': [],
                                            'date': int(time.strftime('%j')),
                                            'search_name': search_name}
@@ -534,15 +475,14 @@ class Playlist_Generator:
                                 if not self.check_genres(artist_genres):
                                     raise GenreError(artist_genres)
                             if self.popular:
-                                tracks = self.filter_tracks(search_name, self.get_artist_popular_tracks(artist_dict['uri']))
-                                track_ids = [track['uri'] for track in tracks]
+                                tracks = self.filter_tracks(search_name, self.service.get_artist_top_tracks(artist_dict['uri']))
+                                track_ids = [track.id for track in tracks]
                                 artist_dict['popular'] = track_ids
                             else:
-                                tracks = self.filter_tracks(search_name, self.get_all_artist_tracks(artist_dict['uri']))
-                                tracks = {track['name']: track for track in tracks}
-                                tracks = [[track['uri'], track['duration_ms']] for track in tracks.values()]
-                                tracks.sort(key=lambda x: x[1])
-                                track_ids = [track[0] for track in tracks]
+                                tracks = self.filter_tracks(search_name, self.service.get_artist_all_tracks(artist_dict['uri']))
+                                tracks = {track.name: track for track in tracks}
+                                sorted_tracks = sorted(tracks.values(), key=lambda t: t.duration_ms)
+                                track_ids = [track.id for track in sorted_tracks]
                                 artist_dict['full'] = track_ids
                             self.saved_artists.update({artist[0]: artist_dict})
                             return track_ids[:artist[1]]
@@ -555,14 +495,14 @@ class Playlist_Generator:
                 raise ArtistNotFoundError(artist)
 
     def get_track_ids(self, top_artists, max_entries=500, no_of_old_results=0):
-        """Generates a list of Spotify track ids from input artist and needed number of plays.
+        """Generates a list of track ids from input artist and needed number of plays.
 
         Args:
             top_artists ([ [str, int] ]): An (preferrably) ordered list of pairs of artist names and number of plays.
             max_entries (int, optional): Number of tracks to add to playlist. Defaults to 500.
 
         Returns:
-            [str]: A list of Spotify track ids. No longer than max_entries.
+            [str]: A list of track ids for the active music service. No longer than max_entries.
         """
         track_ids = [[], [], [], [], [], [], [], [], [], []]
         tracks_added = no_of_old_results
@@ -666,14 +606,14 @@ class Playlist_Generator:
         return True
 
     def save_local_artist_info(self):
-        return save_artist_info(self.saved_artists)
+        return save_artist_info(self.saved_artists, self.music_service_name)
 
     # File stuff
     def save_failed_artists(self):
-        return write_yaml('failed_artists.yaml', self.failed_artists)
+        return save_failed_artists_to_file(self.failed_artists, self.music_service_name)
 
     def save_no_song_artists(self):
-        return write_yaml('no_song_artists.yaml', self.no_song_artists)
+        return save_no_song_artists_to_file(self.no_song_artists, self.music_service_name)
 
     def make_logs(self):
         dumpfile = {'failed_artist': self.instance_fail_list,
