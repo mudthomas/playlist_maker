@@ -25,6 +25,7 @@ class Playlist_Generator:
         self.stealing_settings = settings['stealing_settings']
         self.verbose = self.general_settings['verbose']
         self.genres = self.general_settings['genres']
+        self.genre_source = self.general_settings['genre_source']
         self.popular = self.general_settings['popular']
         self.Spotify_sleep_time = self.general_settings['sleep_time_Spotify']
         self.Lastfm_sleep_time = self.general_settings['sleep_time_Lastfm']
@@ -214,6 +215,25 @@ class Playlist_Generator:
         return self.get_user_scrobbles(Lastfm_username=opponent_Lastfm_username,
                                        min_scrobbles=scrobble_target,
                                        starting_page=1)
+
+    def get_lastfm_artist_genres(self, artist_name, limit=10):
+        """Fetches an artist's top user-submitted tags from last.fm, used as a genre substitute.
+
+        Args:
+            artist_name (str): The artist to look up.
+            limit (int, optional): Max number of tags to fetch. Defaults to 10.
+
+        Returns:
+            [str]: A list of tag names. Empty if last.fm has none, or the artist was not found.
+        """
+        try:
+            top_tags = pl.Artist(artist_name, self.pl_net).get_top_tags(limit=limit)
+            time.sleep(self.Lastfm_sleep_time)
+        except pl.WSError as e:
+            self.add_to_error_log(f"last.fm tag lookup failed for {artist_name}:", True)
+            self.add_to_error_log(e, True)
+            return []
+        return [tag.item.get_name() for tag in top_tags]
     # End LastFM stuff
 
     # Spotify Things, Playlists
@@ -430,6 +450,31 @@ class Playlist_Generator:
                         return True
         return False
 
+    def get_relevant_artist_genres(self, artist_name, saved_artist):
+        """Returns the cached genre/tag list for whichever source general_settings.genre_source
+        selects ('Spotify' or 'LastFM'), fetching and caching it first if needed.
+
+        Spotify genres arrive for free with the artist search result, so only the 'genres_spotify'
+        placeholder is filled in here if it's genuinely empty. LastFM tags require a dedicated API
+        call, made only the first time an artist is looked up under that source.
+
+        Args:
+            artist_name (str): The artist's key in self.saved_artists.
+            saved_artist (dict): That artist's saved_artists entry.
+
+        Returns:
+            [str]: The artist's genres/tags for the configured source. Never empty -
+                   '+ NO GENRE +' is used as a placeholder so a lookup isn't repeated.
+        """
+        genre_key = 'genres_spotify' if self.genre_source == 'Spotify' else 'genres_lastfm'
+        if not len(saved_artist[genre_key]):
+            if self.genre_source == 'LastFM':
+                saved_artist[genre_key] = self.get_lastfm_artist_genres(artist_name)
+            if not len(saved_artist[genre_key]):
+                saved_artist[genre_key] = ['+ NO GENRE +']
+            self.saved_artists.update({artist_name: saved_artist})
+        return saved_artist[genre_key]
+
     def filter_tracks(self, artist_name, tracks):
         artist_name = self.clean_string(artist_name)
         return [track for track in tracks if self.clean_string(track['artists'][0]['name']) == artist_name]
@@ -437,13 +482,11 @@ class Playlist_Generator:
     def get_artist_track_ids(self, artist):
         try:
             saved_artist = self.saved_artists[artist[0]]
-            if not len(saved_artist['genres']):
-                saved_artist['genres'] = ['+ NO GENRE +']
-                self.saved_artists.update({artist[0]: saved_artist})
-            if len(self.genres) and not self.check_genres(saved_artist['genres']):
-                self.saved_artists.update({artist[0]: saved_artist})
-                raise GenreError(saved_artist['genres'])
-            elif self.popular:
+            if self.genre_source is not None and len(self.genres):
+                artist_genres = self.get_relevant_artist_genres(artist[0], saved_artist)
+                if not self.check_genres(artist_genres):
+                    raise GenreError(artist_genres)
+            if self.popular:
                 if not len(saved_artist['popular']):
                     try:
                         search_name = saved_artist['search_name']
@@ -481,14 +524,15 @@ class Playlist_Generator:
                             artist_dict = {'full': [],
                                            'popular': [],
                                            'uri': search_results[i]["uri"],
-                                           'genres': search_results[i]['genres'],
+                                           'genres_spotify': search_results[i]['genres'],
+                                           'genres_lastfm': [],
                                            'date': int(time.strftime('%j')),
                                            'search_name': search_name}
-                            if not len(artist_dict['genres']):
-                                artist_dict.update({'genres': ['+ NO GENRE +']})
-                            if len(self.genres) and not self.check_genres(artist_dict['genres']):
-                                self.saved_artists.update({artist[0]: artist_dict})
-                                raise GenreError(search_results[i]['genres'])
+                            self.saved_artists.update({artist[0]: artist_dict})
+                            if self.genre_source is not None and len(self.genres):
+                                artist_genres = self.get_relevant_artist_genres(artist[0], artist_dict)
+                                if not self.check_genres(artist_genres):
+                                    raise GenreError(artist_genres)
                             if self.popular:
                                 tracks = self.filter_tracks(search_name, self.get_artist_popular_tracks(artist_dict['uri']))
                                 track_ids = [track['uri'] for track in tracks]

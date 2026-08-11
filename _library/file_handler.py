@@ -1,6 +1,10 @@
 import yaml
 import json
 
+# Valid values for general_settings.genre_source.
+# None disables genre checking entirely, avoiding any related API calls.
+GENRE_SOURCES = [None, 'Spotify', 'LastFM']
+
 
 # YAML Getters
 def read_yaml(filename):
@@ -24,6 +28,9 @@ def get_config():
     try:
         with open('config.yaml', 'r') as file:
             settings = yaml.safe_load(file)
+            # Backfill settings introduced after this config.yaml was first generated,
+            # so older config files on disk do not break on the missing key.
+            settings['general_settings'].setdefault('genre_source', None)
             verify_config(settings)
     except FileNotFoundError:
         settings = generate_settings()
@@ -45,6 +52,11 @@ def verify_config(settings):
                     raise ValueError(
                         f"Error in config.yaml, {setting_set}, {setting}. Value should be an a list of strings."
                     )
+            elif setting == 'genre_source':
+                if settings[setting_set]['genre_source'] not in GENRE_SOURCES:
+                    raise ValueError(
+                        f"Error in config.yaml, {setting_set}, {setting}. Value should be one of {GENRE_SOURCES}."
+                    )
             else:
                 if not isinstance(settings[setting_set][setting], int):
                     raise ValueError(f"Error in config.yaml, {setting_set}, {setting}. Value should be an integer.")
@@ -62,6 +74,7 @@ def generate_settings():
                                      'sleep_time_Spotify': 0,
                                      'sleep_time_Lastfm': 0,
                                      'genres': [],
+                                     'genre_source': None,
                                      'popular': 1},
                 'farming_settings': {'active': 1,
                                      'crown_goal': 30,
@@ -90,6 +103,21 @@ def get_saved_artists():
                 saved_art = yaml.safe_load(file)
         except FileNotFoundError:
             saved_art = {}
+    return _migrate_saved_artists(saved_art)
+
+
+def _migrate_saved_artists(saved_art):
+    """Migrates entries saved before genres were split by source.
+
+    Older cache entries store a single 'genres' list (Spotify-sourced). This moves
+    that data to 'genres_spotify' and adds an empty 'genres_lastfm', so both sources
+    can be cached independently going forward.
+    """
+    for artist_info in saved_art.values():
+        if 'genres' in artist_info:
+            artist_info.setdefault('genres_spotify', artist_info.pop('genres'))
+        artist_info.setdefault('genres_spotify', [])
+        artist_info.setdefault('genres_lastfm', [])
     return saved_art
 
 
