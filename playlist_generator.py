@@ -21,6 +21,7 @@ from _library.music_services import get_music_service_class
 from _library.errors import GenreError, ArtistNotFoundError, NoSongsFoundError, SearchError
 
 BIG_NUMBER = 1000000  # Maybe replace this with numpy.inf or something...
+
 # How many SearchErrors in a row (across different artists) get_track_ids tolerates
 # before giving up on the rest of the batch - see the except SearchError handler
 # there. A single SearchError is treated as a one-off (the artist is skipped, the

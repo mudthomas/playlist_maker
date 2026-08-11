@@ -24,7 +24,7 @@ except ImportError:
     # `pip install tidalapi` succeeds - everything else keeps working normally.
     pass
 
-DEFAULT_MUSIC_SERVICE = 'Spotify'
+DEFAULT_MUSIC_SERVICE = 'Tidal'
 
 
 def get_music_service_class(name):
