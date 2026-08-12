@@ -2,12 +2,23 @@
 
 from PyInstaller.utils.hooks import collect_all
 
-# pkg_resources vendors jaraco.text/jaraco.functools/etc internally, and
-# PyInstaller's default analysis misses those vendored submodules and their
-# package metadata - collect_all grabs everything setuptools/pkg_resources
-# needs so we don't have to hand-list individual jaraco.* modules (which
-# vary by setuptools version).
-datas, binaries, hiddenimports = collect_all('setuptools')
+datas = []
+binaries = []
+hiddenimports = [
+    # pkg_resources's VendorImporter falls back to these vendored copies when it
+    # can't find real top-level jaraco.* packages. That fallback import happens
+    # dynamically, so PyInstaller's static analysis never sees it - has to be
+    # spelled out explicitly here.
+    'jaraco.text',
+    'jaraco.functools',
+    'jaraco.context',
+    'jaraco.classes',
+]
+for pkg in ('setuptools', 'pkg_resources'):
+    pkg_datas, pkg_binaries, pkg_hiddenimports = collect_all(pkg)
+    datas += pkg_datas
+    binaries += pkg_binaries
+    hiddenimports += pkg_hiddenimports
 
 a = Analysis(
     ['playlist_generator.py'],
