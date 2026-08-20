@@ -56,6 +56,8 @@ def get_config():
             old_genres = general.pop('genres', None)
             settings['farming_settings'].setdefault('genres', old_genres if old_genres is not None else [])
             settings['stealing_settings'].setdefault('genres', old_genres if old_genres is not None else [])
+            settings['farming_settings'].setdefault('max_songs_per_artist', 10)
+            settings['stealing_settings'].setdefault('max_songs_per_artist', 10)
             verify_config(settings)
     except FileNotFoundError:
         settings = generate_settings()
@@ -124,6 +126,7 @@ def generate_settings():
                                      'crown_goal': 30,
                                      'genres': [],
                                      'last_run': 0,
+                                     'max_songs_per_artist': 10,
                                      'playlist_length': 100,
                                      'starting_page': 1},
                 'stealing_settings': {'active': 1,
@@ -131,6 +134,7 @@ def generate_settings():
                                       'genres': [],
                                       'last_opponent_save': 0,
                                       'last_run': 0,
+                                      'max_songs_per_artist': 10,
                                       'overtake': 0,
                                       'playlist_length': 100,
                                       'reuse': 7,

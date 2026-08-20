@@ -310,6 +310,9 @@ class Playlist_Generator:
         """
         scrobble_target = self.farming_settings['crown_goal']
         self.genres = self.farming_settings['genres']
+        # 0 means "no cap" in config.yaml - substitute BIG_NUMBER so min(artist[1], ...)
+        # in get_artist_track_ids doesn't slice everyone down to zero tracks.
+        self.max_songs_per_artist = self.farming_settings['max_songs_per_artist'] or BIG_NUMBER
         if self.verbose:
             print("\n## Generating list for farming own crowns ##")
         top_artists = self.get_own_scrobbles(scrobble_target, self.farming_settings['starting_page'])
@@ -339,6 +342,7 @@ class Playlist_Generator:
         if self.verbose:
             print("\n## Generating list for stealing others crowns ##")
         self.genres = self.stealing_settings['genres']
+        self.max_songs_per_artist = self.stealing_settings['max_songs_per_artist'] or BIG_NUMBER
         scrobble_target = self.stealing_settings['crown_goal']
         number_of_tracks = self.stealing_settings['playlist_length']
         reuse = self.should_opp_scrobbles_be_reused()
@@ -481,7 +485,7 @@ class Playlist_Generator:
                     tracks = self.filter_tracks(search_name, self.service.get_artist_top_tracks(saved_artist["uri"]))
                     saved_artist['popular'] = [track.id for track in tracks]
                     self.saved_artists.update({artist[0]: saved_artist})
-                return saved_artist['popular'][:artist[1]]
+                return saved_artist['popular'][:min(artist[1], self.max_songs_per_artist)]
             else:
                 if not len(saved_artist['full']):
                     try:
@@ -493,7 +497,7 @@ class Playlist_Generator:
                     sorted_tracks = sorted(tracks.values(), key=lambda t: t.duration_ms)
                     saved_artist['full'] = [track.id for track in sorted_tracks]
                     self.saved_artists.update({artist[0]: saved_artist})
-                return saved_artist['full'][:artist[1]]
+                return saved_artist['full'][:min(artist[1], self.max_songs_per_artist)]
         except KeyError:
             search_name_methods = [lambda x: x,
                                    lambda x: x.replace(' and ', ' & ').replace(' och ', ' & '),
@@ -529,7 +533,7 @@ class Playlist_Generator:
                                 track_ids = [track.id for track in sorted_tracks]
                                 artist_dict['full'] = track_ids
                             self.saved_artists.update({artist[0]: artist_dict})
-                            return track_ids[:artist[1]]
+                            return track_ids[:min(artist[1], self.max_songs_per_artist)]
                 except (IndexError, TypeError):
                     # Should this be search-error?
                     # Is this even reached?
