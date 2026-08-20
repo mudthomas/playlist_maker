@@ -51,6 +51,11 @@ def get_config():
             if 'sleep_time_Spotify' in general and 'sleep_time_music_service' not in general:
                 general['sleep_time_music_service'] = general.pop('sleep_time_Spotify')
             general.setdefault('sleep_time_music_service', 2)
+            # genres used to live under general_settings and applied to both farm and
+            # steal. Migrate it into each section that doesn't already have its own.
+            old_genres = general.pop('genres', None)
+            settings['farming_settings'].setdefault('genres', old_genres if old_genres is not None else [])
+            settings['stealing_settings'].setdefault('genres', old_genres if old_genres is not None else [])
             verify_config(settings)
     except FileNotFoundError:
         settings = generate_settings()
@@ -111,18 +116,19 @@ def generate_settings():
     settings = {'general_settings': {'verbose': 1,
                                      'sleep_time_music_service': 2,
                                      'sleep_time_Lastfm': 2,
-                                     'genres': [],
                                      'genre_source': None,
                                      'music_service': DEFAULT_MUSIC_SERVICE,
                                      'own_scrobbles_cache_hours': 8,
                                      'popular': 1},
                 'farming_settings': {'active': 1,
                                      'crown_goal': 30,
+                                     'genres': [],
                                      'last_run': 0,
                                      'playlist_length': 100,
                                      'starting_page': 1},
                 'stealing_settings': {'active': 1,
                                       'crown_goal': 30,
+                                      'genres': [],
                                       'last_opponent_save': 0,
                                       'last_run': 0,
                                       'overtake': 0,

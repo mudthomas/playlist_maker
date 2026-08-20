@@ -44,7 +44,6 @@ class Playlist_Generator:
         self.farming_settings = settings['farming_settings']
         self.stealing_settings = settings['stealing_settings']
         self.verbose = self.general_settings['verbose']
-        self.genres = self.general_settings['genres']
         self.genre_source = self.general_settings['genre_source']
         self.popular = self.general_settings['popular']
         self.music_service_name = self.general_settings['music_service']
@@ -310,6 +309,7 @@ class Playlist_Generator:
             number_of_tracks (int, optional): Number of songs to be added to playlist. Defaults to 500.
         """
         scrobble_target = self.farming_settings['crown_goal']
+        self.genres = self.farming_settings['genres']
         if self.verbose:
             print("\n## Generating list for farming own crowns ##")
         top_artists = self.get_own_scrobbles(scrobble_target, self.farming_settings['starting_page'])
@@ -338,6 +338,7 @@ class Playlist_Generator:
         """
         if self.verbose:
             print("\n## Generating list for stealing others crowns ##")
+        self.genres = self.stealing_settings['genres']
         scrobble_target = self.stealing_settings['crown_goal']
         number_of_tracks = self.stealing_settings['playlist_length']
         reuse = self.should_opp_scrobbles_be_reused()
