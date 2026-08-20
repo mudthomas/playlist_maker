@@ -10,19 +10,13 @@ are all driven off this registry, not hardcoded to any particular service.
 """
 from .base import MusicService, ArtistResult, Track
 from .spotify_service import SpotifyService
+from .tidal_service import TidalService
 
 MUSIC_SERVICES = {
     'Spotify': SpotifyService,
+    'Tidal': TidalService
 }
 
-try:
-    from .tidal_service import TidalService
-    MUSIC_SERVICES['Tidal'] = TidalService
-except ImportError:
-    # tidalapi (or one of its own dependencies, e.g. mpegdash/pyaes/ratelimit) isn't
-    # installed. Tidal just won't be a valid music_service choice until
-    # `pip install tidalapi` succeeds - everything else keeps working normally.
-    pass
 
 DEFAULT_MUSIC_SERVICE = 'Tidal'
 

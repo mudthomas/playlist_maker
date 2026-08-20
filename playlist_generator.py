@@ -3,7 +3,6 @@ import json
 import pylast as pl
 import time
 import yaml
-import pyperclip
 
 from _library.advanced_pylast import advanced_pylast_User as pl_User
 from _library.file_handler import (get_config, get_blacklist,
@@ -283,6 +282,8 @@ class Playlist_Generator:
             top_tags = pl.Artist(artist_name, self.pl_net).get_top_tags(limit=limit)
             time.sleep(self.Lastfm_sleep_time)
         except pl.WSError as e:
+            if self.verbose:
+                print(f"last.fm tag lookup failed for {artist_name}")
             self.add_to_error_log(f"last.fm tag lookup failed for {artist_name}:", True)
             self.add_to_error_log(e, True)
             return []
@@ -421,11 +422,12 @@ class Playlist_Generator:
         wanted_genres = self.genres
         for genre in wanted_genres:
             if genre[0] == '+':
-                if genre[1:] in artist_genres:
-                    return True
+                for genre2 in artist_genres:
+                    if genre.lower() == genre2.lower():
+                        return True
             else:
                 for genre2 in artist_genres:
-                    if genre in genre2:
+                    if genre.lower() in genre2.lower():
                         return True
         return False
 
