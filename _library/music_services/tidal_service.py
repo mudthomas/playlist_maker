@@ -38,10 +38,10 @@ class TidalService(MusicService):
 
     @staticmethod
     def _to_track(track):
-        if track.artist is not None:
-            artist_name = track.artist.name
-        elif track.artists:
+        if track.artists:
             artist_name = track.artists[0].name
+        elif track.artist is not None:
+            artist_name = track.artist.name
         else:
             artist_name = ''
         return Track(id=str(track.id),

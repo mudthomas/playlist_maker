@@ -5,7 +5,7 @@ import time
 import yaml
 
 from _library.advanced_pylast import advanced_pylast_User as pl_User
-from _library.file_handler import (get_config, get_blacklist,
+from _library.file_handler import (get_config, get_blacklist, get_graylist,
                                    get_opponent_list,
                                    get_saved_artists, save_artist_info,
                                    get_failed_artists, get_no_song_artists,
@@ -15,7 +15,9 @@ from _library.file_handler import (get_config, get_blacklist,
                                    get_service_credentials, save_service_credentials,
                                    migrate_legacy_auth_json, write_yaml,
                                    append_string_to_txt,
-                                   get_own_scrobbles_cache, save_own_scrobbles_cache)
+                                   get_own_scrobbles_cache, save_own_scrobbles_cache,
+                                   get_artist_corrections,
+                                   save_artist_corrections as save_artist_corrections_to_file)
 from _library.music_services import get_music_service_class
 from _library.errors import GenreError, ArtistNotFoundError, NoSongsFoundError, SearchError
 
@@ -57,6 +59,7 @@ class Playlist_Generator:
         self._own_scrobbles_full = None
         self.instance_fail_list, self.instance_no_songs = {}, {}
         self.skipped_genres = {}
+        self.artist_corrections = get_artist_corrections()
         self.saved_artists = get_saved_artists(self.music_service_name)
         self.failed_artists = get_failed_artists(self.music_service_name)
         self.no_song_artists = get_no_song_artists(self.music_service_name)
@@ -122,6 +125,7 @@ class Playlist_Generator:
                                      error_logger=self.add_to_error_log)
 
         self.blacklist_artists = get_blacklist()
+        self.graylist_artists = set(get_graylist())
         self.opponent_list = get_opponent_list()
 
     # LastFM Stuff
@@ -161,7 +165,7 @@ class Playlist_Generator:
         # while len(ret.keys()) < min_artists:
         while True:
             try:
-                top_artists = Lastfm_user.get_top_artists(limit=512, page=page_no)
+                top_artists = Lastfm_user.get_top_artists(limit=1000, page=page_no)
                 time.sleep(self.Lastfm_sleep_time)
             except pl.WSError as e:
                 if e.details == "Connection to the API failed with HTTP code 500":
@@ -170,6 +174,9 @@ class Playlist_Generator:
                     self.add_to_error_log("Here follows an error from pyLast. I want to be able to handle it:", True)
                     self.add_to_error_log(e, True)
                     time.sleep(10)
+                    break
+            except:
+                break
             else:
                 if len(top_artists):  # Failsafe, just in case all artists have been fetched.
                     if int(top_artists[-1].weight) >= max_scrobbles:
@@ -227,11 +234,37 @@ class Playlist_Generator:
         """
         cached = self._load_fresh_own_scrobbles_cache()
         if cached is not None:
+            if self.verbose:
+                print("## Reusing locally stored data of own scrobbles ##")
             return cached
+        if self.verbose:
+            print("## Fetching own scrobbles from lastFM ##")
         data = self.get_user_scrobbles(Lastfm_username=self.my_Lastfm_username)
+        data = self._expand_own_scrobbles_with_corrections(data)
         self._own_scrobbles_full = data
         save_own_scrobbles_cache(int(time.time()), data)
         return data
+
+    def _expand_own_scrobbles_with_corrections(self, scrobbles):
+        """Adds each artist's last.fm-corrected/canonical name as an extra key into
+        scrobbles, summing plays where multiple raw entries collapse onto the same
+        canonical form.
+
+        Own scrobbles for one real-world artist can be split across several
+        non-canonical name variants (e.g. differently-romanized spellings) - see
+        get_lastfm_artist_correction - which otherwise undercounts against opponent/
+        graylist entries that happen to use yet another spelling of the same artist.
+        Only ever runs once per artist thanks to get_lastfm_artist_correction's
+        persistent cache, so repeat calls (this fetches fresh at most once per
+        general_settings.own_scrobbles_cache_hours) are nearly free except for
+        genuinely new artists.
+        """
+        expanded = dict(scrobbles)
+        for artist, plays in scrobbles.items():
+            corrected = self.get_lastfm_artist_correction(artist)
+            if corrected != artist:
+                expanded[corrected] = expanded.get(corrected, 0) + plays
+        return expanded
 
     def get_own_scrobbles(self, scrobble_target, min_artists=1000, starting_page=1):
         """Fetches the 1000 top artist for the logged in user and filters out those with scrobbles over the target.
@@ -251,7 +284,11 @@ class Playlist_Generator:
         """
         cached = self._load_fresh_own_scrobbles_cache()
         if cached is not None:
+            if self.verbose:
+                print("## Reusing locally stored data of own scrobbles ##")
             return {artist: plays for artist, plays in cached.items() if plays < scrobble_target}
+        if self.verbose:
+            print("## Fetching own scrobbles from lastFM ##")
         return self.get_user_scrobbles(Lastfm_username=self.my_Lastfm_username,
                                        max_scrobbles=scrobble_target,
                                        min_artists=min_artists,
@@ -287,6 +324,33 @@ class Playlist_Generator:
             self.add_to_error_log(e, True)
             return []
         return [tag.item.get_name() for tag in top_tags]
+
+    def get_lastfm_artist_correction(self, artist_name):
+        """Returns last.fm's corrected/canonical form of artist_name, e.g. resolving a
+        romanized name to the native-script name last.fm actually aggregates a user's
+        scrobbles under (or vice versa) - see steal_crowns, where this is used as a
+        fallback when a direct name lookup into my_top_artists misses.
+
+        Cached in self.artist_corrections (artist_corrections.json) so a given artist
+        is only ever looked up once, across this and future runs. Returns artist_name
+        unchanged if last.fm has no correction for it; a failed lookup also returns
+        artist_name unchanged but isn't cached, so it's retried next time instead of
+        being stuck on a possibly-transient error.
+        """
+        if artist_name in self.artist_corrections:
+            return self.artist_corrections[artist_name]
+        try:
+            corrected = pl.Artist(artist_name, self.pl_net).get_correction()
+            time.sleep(self.Lastfm_sleep_time)
+        except pl.WSError as e:
+            if self.verbose:
+                print(f"last.fm artist correction lookup failed for {artist_name}")
+            self.add_to_error_log(f"last.fm artist correction lookup failed for {artist_name}:", True)
+            self.add_to_error_log(e, True)
+            return artist_name
+        corrected = corrected or artist_name
+        self.artist_corrections[artist_name] = corrected
+        return corrected
     # End LastFM stuff
 
     # Playlist stuff
@@ -318,6 +382,11 @@ class Playlist_Generator:
         top_artists = self.get_own_scrobbles(scrobble_target, self.farming_settings['starting_page'])
         skip_artists = self._get_skip_artists()
         top_artists = [[key, scrobble_target - value] for key, value in top_artists.items() if key not in skip_artists]
+        # Filtered separately from skip_artists, same as the reuse gap in steal_crowns -
+        # get_own_scrobbles can serve a cached snapshot (own_scrobbles_cache.json), so a
+        # newly graylisted artist needs its own check here rather than folding into
+        # _get_skip_artists.
+        top_artists = [[key, value] for key, value in top_artists if key not in self.graylist_artists]
         try:
             track_ids = self.get_track_ids(top_artists, self.farming_settings['playlist_length'])
         finally:
@@ -382,12 +451,23 @@ class Playlist_Generator:
 
         top_artists_list = []
         for artist, scrobbles in top_artists.items():
+            if artist in self.graylist_artists:
+                continue
             if scrobbles >= scrobble_target:
                 my_scrobble = my_top_artists.get(artist, 0)
+                if not my_scrobble:
+                    # last.fm can aggregate this user's scrobbles for this artist under a
+                    # different name than the one used here (e.g. native-script vs
+                    # romanized) - fall back to last.fm's own correction before concluding
+                    # there really are 0 plays.
+                    corrected = self.get_lastfm_artist_correction(artist)
+                    if corrected != artist:
+                        my_scrobble = my_top_artists.get(corrected, 0)
                 if self.stealing_settings['overtake'] and not my_scrobble:
+                    self.remove_list.append(artist)
                     continue
                 scrobbles -= my_scrobble
-                if 0 <= scrobbles:
+                if scrobbles >= 0:
                     top_artists_list.append([artist, scrobbles + 1])
                 else:
                     self.remove_list.append(artist)
@@ -400,17 +480,19 @@ class Playlist_Generator:
             self.save_local_artist_info()
             self.save_failed_artists()
             self.save_no_song_artists()
+            self.save_artist_corrections()
+            if len(self.remove_list):
+                for artist in self.remove_list:
+                    try:
+                        top_artists.pop(artist)
+                    except KeyError:
+                        continue
+                with open('opponent_scrobbles.json', 'w', encoding='UTF-8') as opp:
+                    json.dump(top_artists, opp)
 
         self.service.empty_playlist(self.stealing_playlist)
         self.service.add_to_playlist(track_ids, self.stealing_playlist)
-        if len(self.remove_list):
-            for artist in self.remove_list:
-                try:
-                    top_artists.pop(artist)
-                except KeyError:
-                    continue
-            with open('opponent_scrobbles.json', 'w', encoding='UTF-8') as opp:
-                json.dump(top_artists, opp)
+        
         if not reuse:
             self.stealing_settings['last_opponent_save'] = int(time.strftime('%j'))
             self.stealing_settings['saved_opponent_goal'] = self.stealing_settings['crown_goal']
@@ -428,7 +510,7 @@ class Playlist_Generator:
         for genre in wanted_genres:
             if genre[0] == '+':
                 for genre2 in artist_genres:
-                    if genre.lower() == genre2.lower():
+                    if genre[1:].lower() == genre2.lower():
                         return True
             else:
                 for genre2 in artist_genres:
@@ -513,10 +595,12 @@ class Playlist_Generator:
                             artist_dict = {'full': [],
                                            'popular': [],
                                            'uri': result.id,
-                                           'genres_spotify': result.genres,
+                                           'genres_spotify': [],
                                            'genres_lastfm': [],
                                            'date': int(time.strftime('%j')),
                                            'search_name': search_name}
+                            if self.genre_source == 'Spotify':
+                                artist_dict['genres_spotify'] = result.genres
                             self.saved_artists.update({artist[0]: artist_dict})
                             if self.genre_source is not None and len(self.genres):
                                 artist_genres = self.get_relevant_artist_genres(artist[0], artist_dict)
@@ -532,6 +616,12 @@ class Playlist_Generator:
                                 sorted_tracks = sorted(tracks.values(), key=lambda t: t.duration_ms)
                                 track_ids = [track.id for track in sorted_tracks]
                                 artist_dict['full'] = track_ids
+                            if not track_ids:
+                                # The music service can have multiple distinct artist ids sharing
+                                # the exact same display name (duplicate/unmerged catalog entries) -
+                                # some of those duplicates have no usable tracks. Try the next
+                                # same-named candidate instead of giving up on this artist.
+                                continue
                             self.saved_artists.update({artist[0]: artist_dict})
                             return track_ids[:min(artist[1], self.max_songs_per_artist)]
                 except (IndexError, TypeError):
@@ -660,6 +750,9 @@ class Playlist_Generator:
 
     def save_no_song_artists(self):
         return save_no_song_artists_to_file(self.no_song_artists, self.music_service_name)
+
+    def save_artist_corrections(self):
+        return save_artist_corrections_to_file(self.artist_corrections)
 
     def make_logs(self):
         dumpfile = {'failed_artist': self.instance_fail_list,

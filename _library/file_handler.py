@@ -216,6 +216,21 @@ def save_own_scrobbles_cache(timestamp, data):
     return write_json('own_scrobbles_cache.json', {'timestamp': timestamp, 'data': data})
 
 
+# Artist name corrections
+# Caches last.fm's own artist-alias resolution (e.g. a romanized name -> the
+# native-script name last.fm actually aggregates a user's scrobbles under - see
+# Playlist_Generator.get_lastfm_artist_correction), so the same artist is never
+# looked up twice. Pure last.fm data, independent of which music_service is
+# active. Unlike the own-scrobbles cache, a correction doesn't go stale, so this
+# has no timestamp/expiry.
+def get_artist_corrections():
+    return _read_json_or_none('artist_corrections.json') or {}
+
+
+def save_artist_corrections(corrections):
+    return write_json('artist_corrections.json', corrections)
+
+
 # Credentials
 # last.fm credentials are shared regardless of which music_service is active.
 # Each music service gets its own auth_<service>.json, holding whatever keys its
@@ -271,6 +286,10 @@ def migrate_legacy_auth_json():
 # TXT Getters
 def get_blacklist():
     return _get_list_from_txt('blacklist_artists.txt')
+
+
+def get_graylist():
+    return _get_list_from_txt('graylist_artists.txt')
 
 
 def get_opponent_list():
