@@ -31,3 +31,17 @@ class SearchError(PlayListError):
         self.artist = artist
         self.message = f"Could not complete search for artist: {self.artist}."
         super().__init__(self.message)
+
+
+class ArtistCorrectionError(PlayListError):
+    def __init__(self, artist):
+        self.artist = artist
+        self.message = f"last.fm lookup failed while resolving/correcting scrobbles for artist: {self.artist}."
+        super().__init__(self.message)
+
+
+class AlreadyCaughtUpError(PlayListError):
+    def __init__(self, artist):
+        self.artist = artist
+        self.message = f"Already have enough corrected plays to overtake artist: {self.artist}."
+        super().__init__(self.message)

@@ -65,17 +65,35 @@ class TidalService(MusicService):
                     time.sleep(2 ** attempt)  # exponential backoff before retrying: 1s, 2s, 4s, ...
         raise SearchError(artist_name)
 
+    def _retry(self, description, action, max_retries=3):
+        """Runs action() up to max_retries times, with the same logging/backoff
+        policy as search_artist, re-raising the last error if every attempt fails.
+        Centralizes that policy so it isn't duplicated across every Tidal call site.
+        """
+        for attempt in range(max_retries):
+            try:
+                return action()
+            except KeyboardInterrupt:
+                raise
+            except Exception as e:
+                self.error_logger(f"Tidal {description} error I want to be able to handle:", True)
+                self.error_logger(e, True)
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)  # exponential backoff before retrying: 1s, 2s, 4s, ...
+                else:
+                    raise
+
     def get_artist_top_tracks(self, artist_id):
-        tracks = self.session.artist(artist_id).get_top_tracks(limit=50)
+        tracks = self._retry("get artist top tracks", lambda: self.session.artist(artist_id).get_top_tracks(limit=50))
         time.sleep(self.sleep_time)
         return [self._to_track(track) for track in tracks]
 
     def get_artist_all_tracks(self, artist_id):
-        albums = self.session.artist(artist_id).get_albums(limit=50)
+        albums = self._retry("get artist albums", lambda: self.session.artist(artist_id).get_albums(limit=50))
         time.sleep(self.sleep_time)
         tracks = []
         for album in albums:
-            tracks.extend(album.tracks())
+            tracks.extend(self._retry("get album tracks", album.tracks))
             time.sleep(self.sleep_time)
         return [self._to_track(track) for track in tracks]
 
@@ -86,14 +104,14 @@ class TidalService(MusicService):
         playlist-fetch calls for a farm_crowns/steal_crowns run.
         """
         if playlist_id not in self._playlist_cache:
-            self._playlist_cache[playlist_id] = self.session.playlist(playlist_id)
+            self._playlist_cache[playlist_id] = self._retry("get playlist", lambda: self.session.playlist(playlist_id))
         return self._playlist_cache[playlist_id]
 
     def empty_playlist(self, playlist_id):
         """Empties a TIDAL playlist of its entries."""
         playlist = self._get_playlist(playlist_id)
         counter = playlist.num_tracks
-        playlist.clear()
+        self._retry("clear playlist", playlist.clear)
         time.sleep(self.sleep_time)
         if self.verbose:
             print(f"Removed {counter} tracks from playlist")
@@ -108,7 +126,8 @@ class TidalService(MusicService):
         number_of_tracks = len(track_ids)
         tracks_added = 0
         while tracks_added < number_of_tracks:
-            playlist.add(track_ids[tracks_added:tracks_added + 100])
+            chunk = track_ids[tracks_added:tracks_added + 100]
+            self._retry("add tracks to playlist", lambda: playlist.add(chunk))
             time.sleep(self.sleep_time)
             tracks_added += 100
         if self.verbose:

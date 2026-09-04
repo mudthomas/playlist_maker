@@ -19,7 +19,8 @@ from _library.file_handler import (get_config, get_blacklist, get_graylist,
                                    get_artist_corrections,
                                    save_artist_corrections as save_artist_corrections_to_file)
 from _library.music_services import get_music_service_class
-from _library.errors import GenreError, ArtistNotFoundError, NoSongsFoundError, SearchError
+from _library.errors import (GenreError, ArtistNotFoundError, NoSongsFoundError, SearchError,
+                             ArtistCorrectionError, AlreadyCaughtUpError)
 
 BIG_NUMBER = 1000000  # Maybe replace this with numpy.inf or something...
 
@@ -175,8 +176,6 @@ class Playlist_Generator:
                     self.add_to_error_log(e, True)
                     time.sleep(10)
                     break
-            except:
-                break
             else:
                 if len(top_artists):  # Failsafe, just in case all artists have been fetched.
                     if int(top_artists[-1].weight) >= max_scrobbles:
@@ -240,31 +239,11 @@ class Playlist_Generator:
         if self.verbose:
             print("## Fetching own scrobbles from lastFM ##")
         data = self.get_user_scrobbles(Lastfm_username=self.my_Lastfm_username)
-        data = self._expand_own_scrobbles_with_corrections(data)
         self._own_scrobbles_full = data
         save_own_scrobbles_cache(int(time.time()), data)
+        if self.verbose:
+            print("\t### Done ###")
         return data
-
-    def _expand_own_scrobbles_with_corrections(self, scrobbles):
-        """Adds each artist's last.fm-corrected/canonical name as an extra key into
-        scrobbles, summing plays where multiple raw entries collapse onto the same
-        canonical form.
-
-        Own scrobbles for one real-world artist can be split across several
-        non-canonical name variants (e.g. differently-romanized spellings) - see
-        get_lastfm_artist_correction - which otherwise undercounts against opponent/
-        graylist entries that happen to use yet another spelling of the same artist.
-        Only ever runs once per artist thanks to get_lastfm_artist_correction's
-        persistent cache, so repeat calls (this fetches fresh at most once per
-        general_settings.own_scrobbles_cache_hours) are nearly free except for
-        genuinely new artists.
-        """
-        expanded = dict(scrobbles)
-        for artist, plays in scrobbles.items():
-            corrected = self.get_lastfm_artist_correction(artist)
-            if corrected != artist:
-                expanded[corrected] = expanded.get(corrected, 0) + plays
-        return expanded
 
     def get_own_scrobbles(self, scrobble_target, min_artists=1000, starting_page=1):
         """Fetches the 1000 top artist for the logged in user and filters out those with scrobbles over the target.
@@ -455,14 +434,6 @@ class Playlist_Generator:
                 continue
             if scrobbles >= scrobble_target:
                 my_scrobble = my_top_artists.get(artist, 0)
-                if not my_scrobble:
-                    # last.fm can aggregate this user's scrobbles for this artist under a
-                    # different name than the one used here (e.g. native-script vs
-                    # romanized) - fall back to last.fm's own correction before concluding
-                    # there really are 0 plays.
-                    corrected = self.get_lastfm_artist_correction(artist)
-                    if corrected != artist:
-                        my_scrobble = my_top_artists.get(corrected, 0)
                 if self.stealing_settings['overtake'] and not my_scrobble:
                     self.remove_list.append(artist)
                     continue
@@ -474,7 +445,7 @@ class Playlist_Generator:
 
         top_artists_list.sort(key=lambda x: x[1])
         try:
-            track_ids = self.get_track_ids(top_artists_list, number_of_tracks)
+            track_ids = self.get_track_ids(top_artists_list, number_of_tracks, my_top_artists=my_top_artists)
         finally:
             self.update_bad_artists()
             self.save_local_artist_info()
@@ -551,13 +522,52 @@ class Playlist_Generator:
         artist_name = self.clean_string(artist_name)
         return [track for track in tracks if self.clean_string(track.artist_name) == artist_name]
 
-    def get_artist_track_ids(self, artist):
+    def _resolve_actual_name(self, artist_name):
+        """Returns last.fm's corrected name for artist_name, or '' if last.fm already
+        considers it canonical (no correction needed). Raises ArtistCorrectionError on
+        a last.fm lookup failure.
+        """
+        try:
+            corrected_name = pl.Artist(artist_name, self.pl_net).get_correction()
+        except pl.WSError:
+            raise ArtistCorrectionError(artist_name)
+        return '' if corrected_name == artist_name else corrected_name
+
+    def _apply_correction_adjustment(self, artist, actual_name, my_top_artists):
+        """Adjusts artist[1] (plays still needed) in place using the real play count
+        under actual_name, since the direct my_top_artists lookup that originally
+        computed it (in steal_crowns) may have missed plays filed under a
+        differently-spelled name. Raises AlreadyCaughtUpError if this reveals enough
+        plays that none are needed anymore, or ArtistCorrectionError on a last.fm
+        lookup failure.
+        """
+        try:
+            diff = my_top_artists.get(artist[0], 0)
+            diff -= pl.Artist(actual_name, self.pl_net, username=self.my_Lastfm_username).get_userplaycount()
+        except pl.WSError:
+            raise ArtistCorrectionError(artist[0])
+        artist[1] = max(0, artist[1] + diff)
+        if artist[1] <= 0:
+            raise AlreadyCaughtUpError(artist[0])
+
+    def get_artist_track_ids(self, artist, my_top_artists=None):
         try:
             saved_artist = self.saved_artists[artist[0]]
             if self.genre_source is not None and len(self.genres):
                 artist_genres = self.get_relevant_artist_genres(artist[0], saved_artist)
                 if not self.check_genres(artist_genres):
                     raise GenreError(artist_genres)
+            if self.music_service_name == "Tidal" and my_top_artists is not None:
+                try:
+                    if saved_artist['actual_name'] is None:
+                        saved_artist['actual_name'] = self._resolve_actual_name(artist[0])
+                        self.saved_artists.update({artist[0]: saved_artist})
+                    if saved_artist['actual_name'] != '':
+                        self._apply_correction_adjustment(artist, saved_artist['actual_name'], my_top_artists)
+                except KeyError:
+                    saved_artist['actual_name'] = self._resolve_actual_name(artist[0])
+                    self.saved_artists.update({artist[0]: saved_artist})
+
             if self.popular:
                 if not len(saved_artist['popular']):
                     try:
@@ -579,16 +589,28 @@ class Playlist_Generator:
                     sorted_tracks = sorted(tracks.values(), key=lambda t: t.duration_ms)
                     saved_artist['full'] = [track.id for track in sorted_tracks]
                     self.saved_artists.update({artist[0]: saved_artist})
+                if self.music_service_name == "Tidal" and my_top_artists is not None:
+                    if artist_dict['actual_name'] is None:
+                        artist_dict['actual_name'] = self._resolve_actual_name(artist[0])
+                    if artist_dict['actual_name'] != '':
+                        self._apply_correction_adjustment(artist, artist_dict['actual_name'], my_top_artists)
+                self.saved_artists.update({artist[0]: artist_dict})
                 return saved_artist['full'][:min(artist[1], self.max_songs_per_artist)]
         except KeyError:
             search_name_methods = [lambda x: x,
-                                   lambda x: x.replace(' and ', ' & ').replace(' och ', ' & '),
-                                   lambda x: x.lower(),
-                                   lambda x: x.upper(),
-                                   lambda x: ''.join(c for c in x if c.isalnum())]
+                                   #lambda x: x.replace(' and ', ' & ').replace(' och ', ' & '),
+                                   #lambda x: x.lower(),
+                                   #lambda x: x.upper(),
+                                   #lambda x: ''.join(c for c in x if c.isalnum())
+                                   ]
+            old_search_names = []
             for search_name_method in search_name_methods:
                 try:
                     search_name = search_name_method(artist[0])
+                    if search_name in old_search_names:
+                        continue
+                    else:
+                        old_search_names.append(search_name)
                     search_results = self.service.search_artist(search_name)
                     for result in search_results:
                         if self.clean_string(result.name) == self.clean_string(search_name):
@@ -598,7 +620,8 @@ class Playlist_Generator:
                                            'genres_spotify': [],
                                            'genres_lastfm': [],
                                            'date': int(time.strftime('%j')),
-                                           'search_name': search_name}
+                                           'search_name': search_name,
+                                           'actual_name': None}
                             if self.genre_source == 'Spotify':
                                 artist_dict['genres_spotify'] = result.genres
                             self.saved_artists.update({artist[0]: artist_dict})
@@ -622,6 +645,11 @@ class Playlist_Generator:
                                 # some of those duplicates have no usable tracks. Try the next
                                 # same-named candidate instead of giving up on this artist.
                                 continue
+                            if self.music_service_name == "Tidal" and my_top_artists is not None:
+                                if artist_dict['actual_name'] is None:
+                                    artist_dict['actual_name'] = self._resolve_actual_name(artist[0])
+                                if artist_dict['actual_name'] != '':
+                                    self._apply_correction_adjustment(artist, artist_dict['actual_name'], my_top_artists)
                             self.saved_artists.update({artist[0]: artist_dict})
                             return track_ids[:min(artist[1], self.max_songs_per_artist)]
                 except (IndexError, TypeError):
@@ -632,7 +660,7 @@ class Playlist_Generator:
             else:
                 raise ArtistNotFoundError(artist)
 
-    def get_track_ids(self, top_artists, max_entries=500, no_of_old_results=0):
+    def get_track_ids(self, top_artists, max_entries=500, no_of_old_results=0, my_top_artists=None):
         """Generates a list of track ids from input artist and needed number of plays.
 
         Args:
@@ -648,11 +676,11 @@ class Playlist_Generator:
         consecutive_search_errors = 0
         for artist in top_artists:
             try:
-                temp_tracks = self.get_artist_track_ids(artist)
+                temp_tracks = self.get_artist_track_ids(artist, my_top_artists)
                 if temp_tracks is None:
                     print("### I am here ###")
                     raise ArtistNotFoundError(artist)
-                elif len(temp_tracks):
+                if len(temp_tracks):
                     consecutive_search_errors = 0
                     if self.verbose:
                         art_print_string = artist[0] + ":"
@@ -701,6 +729,31 @@ class Playlist_Generator:
                     print(f"Found no songs for {artist[0]}.")
                 self.remove_list.append(artist[0])
                 self.instance_no_songs.update({artist[0]: max(artist[1], self.instance_no_songs.get(artist[1], 0))})
+                continue
+            except ArtistCorrectionError as e:
+                # A last.fm lookup failure while resolving/correcting this artist's own
+                # scrobbles (see get_artist_track_ids) - not a "no songs"/"not found" verdict
+                # on the artist itself, so it deliberately doesn't touch failed_artists.yaml
+                # or no_song_artists.yaml. Pruned from opponent_scrobbles.json via
+                # remove_list so it isn't retried every reused run, but it's not
+                # permanently blacklisted - a future opponent-scrobbles refresh will
+                # reconsider it.
+                consecutive_search_errors = 0
+                if self.verbose:
+                    print(f"last.fm correction lookup failed for {e.artist}, skipping this run.")
+                self.remove_list.append(artist[0])
+                continue
+            except AlreadyCaughtUpError as e:
+                # The last.fm correction revealed enough of this user's own plays under
+                # the corrected name that no more are needed to overtake this artist
+                # (see get_artist_track_ids) - same non-blacklisting treatment as
+                # ArtistCorrectionError above: pruned from opponent_scrobbles.json for
+                # this run via remove_list, but not written to failed_artists.yaml or
+                # no_song_artists.yaml, since standings can shift again later.
+                consecutive_search_errors = 0
+                if self.verbose:
+                    print(f"Already caught up on {e.artist}, skipping.")
+                self.remove_list.append(artist[0])
                 continue
             except KeyboardInterrupt:
                 self.do_exit_stuff()
